@@ -51,6 +51,19 @@ public class ServerlessCompatAgent {
         return CloudEnvironment.UNKNOWN;
     }
 
+    public static String setPackageVersion() {
+        String packageVersion;
+
+        try {
+            packageVersion = ServerlessCompatAgent.class.getPackage().getImplementationVersion();
+        } catch (Exception e) {
+            log.error("Unable to identify package version", e);
+            packageVersion = "unknown";
+        }
+
+        return packageVersion == null ? "unknown" : packageVersion;
+    }
+
     public static void premain(String agentArgs, Instrumentation instrumentation) {
         CloudEnvironment environment = getEnvironment();
         log.debug("Environment detected: {}", environment);
@@ -103,7 +116,11 @@ public class ServerlessCompatAgent {
                 executableFile = userExecutableFile;
             }
 
+            String packageVersion = setPackageVersion();
+            log.debug("Found package version {}", packageVersion);
+
             ProcessBuilder processBuilder = new ProcessBuilder(executableFile.getAbsolutePath());
+            processBuilder.environment().put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
             processBuilder.inheritIO();
             processBuilder.start();
         } catch (Exception e) {
