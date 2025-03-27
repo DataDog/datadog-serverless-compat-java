@@ -7,8 +7,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+enum CloudEnvironment {
+    AZURE_FUNCTION,
+    AZURE_SPRING_APP,
+    GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN,
+    UNKNOWN
+}
 
 public class ServerlessCompatAgent {
     private static final Logger log = LoggerFactory.getLogger(ServerlessCompatAgent.class);
@@ -23,13 +31,32 @@ public class ServerlessCompatAgent {
         return os.contains("linux");
     }
 
+    public static CloudEnvironment getEnvironment() {
+        Map<String, String> env = System.getenv();
+
+        if (env.get("FUNCTIONS_EXTENSION_VERSION") != null &&
+                env.get("FUNCTIONS_WORKER_RUNTIME") != null) {
+            return CloudEnvironment.AZURE_FUNCTION;
+        }
+
+        if (env.get("ASCSVCRT_SPRING__APPLICATION__NAME") != null) {
+            return CloudEnvironment.AZURE_SPRING_APP;
+        }
+
+        if (env.get("FUNCTION_NAME") != null &&
+                env.get("GCP_PROJECT") != null) {
+            return CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN;
+        }
+
+        return CloudEnvironment.UNKNOWN;
+    }
+
     public static String setPackageVersion() {
         String packageVersion;
 
         try {
             packageVersion = ServerlessCompatAgent.class.getPackage().getImplementationVersion();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             log.error("Unable to identify package version", e);
             packageVersion = "unknown";
         }
@@ -38,6 +65,15 @@ public class ServerlessCompatAgent {
     }
 
     public static void premain(String agentArgs, Instrumentation instrumentation) {
+        CloudEnvironment environment = getEnvironment();
+        log.debug("Environment detected: {}", environment);
+
+        if (environment == CloudEnvironment.UNKNOWN) {
+            log.error("{} environment detected, will not start the Datadog Serverless Compatibility Layer",
+                    environment);
+            return;
+        }
+
         final String fileName;
         final String tempDirPath;
 
