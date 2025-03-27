@@ -15,7 +15,6 @@ enum CloudEnvironment {
     AZURE_FUNCTION,
     AZURE_SPRING_APP,
     GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN,
-    GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN,
     UNKNOWN
 }
 
@@ -47,11 +46,6 @@ public class ServerlessCompatAgent {
         if (env.get("FUNCTION_NAME") != null &&
                 env.get("GCP_PROJECT") != null) {
             return CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN;
-        }
-
-        if (env.get("K_SERVICE") != null &&
-                env.get("FUNCTION_TARGET") != null) {
-            return CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN;
         }
 
         return CloudEnvironment.UNKNOWN;
