@@ -51,7 +51,7 @@ public class ServerlessCompatAgent {
         return CloudEnvironment.UNKNOWN;
     }
 
-    public static String setPackageVersion() {
+    public static String getPackageVersion() {
         String packageVersion;
 
         try {
@@ -116,7 +116,7 @@ public class ServerlessCompatAgent {
                 executableFile = userExecutableFile;
             }
 
-            String packageVersion = setPackageVersion();
+            String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
             ProcessBuilder processBuilder = new ProcessBuilder(executableFile.getAbsolutePath());
