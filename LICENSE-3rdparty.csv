@@ -1,0 +1,8 @@
+Component,Origin,License,Copyright
+maven-compiler-plugin,https://github.com/apache/maven-compiler-plugin,Apache License 2.0,"Copyright 2007-2024 The Apache Software Foundation"
+maven-gpg-plugin,https://github.com/apache/maven-gpg-plugin,Apache License 2.0,"Copyright 2007-2024 The Apache Software Foundation"
+maven-javadoc-plugin,https://github.com/apache/maven-javadoc-plugin,Apache License 2.0,"Copyright 2007-2024 The Apache Software Foundation"
+maven-shade-plugin,https://github.com/apache/maven-shade-plugin,Apache License 2.0,"Copyright 2007-2024 The Apache Software Foundation"
+maven-source-plugin,https://github.com/apache/maven-source-plugin,Apache License 2.0,"Copyright 2007-2024 The Apache Software Foundation"
+nexus-staging-maven-plugin,https://github.com/sonatype/nexus-maven-plugins/tree/main/staging,Eclipse Public License Version 1.0,"Copyright (c) 2007-2015 Sonatype, Inc."
+slf4j-simple,https://github.com/qos-ch/slf4j/tree/master/slf4j-simple,MIT,Copyright (c) 2004-2023 QOS.ch
