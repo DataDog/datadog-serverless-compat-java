@@ -4,3 +4,4 @@ bin
 # Maven
 target
 settings.xml
+pom.xml.versionsBackup
