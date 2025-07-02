@@ -79,7 +79,7 @@ jobs:
         with:
           java-version: "21"
           distribution: "zulu"
-          server-id: "nexus"
+          server-id: "central"
           server-username: "SONATYPE_USER"
           server-password: "SONATYPE_PASS"
           gpg-private-key: ${{secrets.GPG_SIGNING_KEY}}
