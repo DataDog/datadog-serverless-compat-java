@@ -64,6 +64,10 @@ public class ServerlessCompatAgent {
         return packageVersion == null ? "unknown" : packageVersion;
     }
 
+    public static boolean isAzureFlexWithoutDDAzureResourceGroup() {
+        return System.getenv("WEBSITE_SKU") == "FlexConsumption" && System.getenv("DD_AZURE_RESOURCE_GROUP") == null;
+    }
+
     public static void premain(String agentArgs, Instrumentation instrumentation) {
         CloudEnvironment environment = getEnvironment();
         log.debug("Environment detected: {}", environment);
@@ -89,6 +93,14 @@ public class ServerlessCompatAgent {
             log.error("Unsupported operating system {}", os);
             return;
         }
+
+        // Check for Azure Flex Consumption functions that don't have the DD_AZURE_RESOURCE_GROUP environment variable set
+        if (environment == CloudEnvironment.AZURE_FUNCTION) {
+            if isAzureFlexWithoutDDAzureResourceGroup() {
+                log.error("Azure function detected on flex consumption plan without DD_AZURE_RESOURCE_GROUP set. Please set the DD_AZURE_RESOURCE_GROUP environment variable to your resource group name in Azure app settings. Shutting down Datadog Serverless Compatibility Layer.");
+                return;
+            }
+        } 
 
         try (InputStream inputStream = ServerlessCompatAgent.class.getClassLoader()
                 .getResourceAsStream(fileName)) {
