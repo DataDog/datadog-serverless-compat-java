@@ -19,7 +19,27 @@ enum CloudEnvironment {
 }
 
 public class ServerlessCompatAgent {
-    private static final Logger log = LoggerFactory.getLogger(ServerlessCompatAgent.class);
+    private static String mapDdLogLevelToSlf4jLogLevel(String ddLogLevel) {
+        switch (ddLogLevel) {
+            case "CRITICAL":
+                return "ERROR";
+            default:
+                return ddLogLevel;
+        }
+    }
+
+    private static final Logger log;
+
+    static {
+        String ddLogLevel = System.getenv().getOrDefault("DD_LOG_LEVEL", "INFO").toUpperCase();
+        if (ddLogLevel.equals("OFF")) {
+            log = org.slf4j.helpers.NOPLogger.NOP_LOGGER;
+        } else {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", mapDdLogLevelToSlf4jLogLevel(ddLogLevel));
+            log = LoggerFactory.getLogger(ServerlessCompatAgent.class);
+        }
+    }
+
     private static final String os = System.getProperty("os.name").toLowerCase();
     private static final String binaryPath = System.getenv("DD_SERVERLESS_COMPAT_PATH");
 
