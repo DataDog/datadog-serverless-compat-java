@@ -10,6 +10,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.NOPLogger;
 
 enum CloudEnvironment {
     AZURE_FUNCTION,
@@ -19,20 +20,22 @@ enum CloudEnvironment {
 }
 
 public class ServerlessCompatAgent {
-    private static String mapDdLogLevelToSlf4jLogLevel(String ddLogLevel) {
-        return "CRITICAL".equals(ddLogLevel) ? "ERROR" : ddLogLevel;
+    private static final String ddLogLevel = System.getenv().getOrDefault("DD_LOG_LEVEL", "INFO").toUpperCase();
+
+    private static final Logger log = initLogger(ddLogLevel);
+
+    private static Logger initLogger(String logLevel) {
+        if ("OFF".equals(logLevel)) {
+            return NOPLogger.NOP_LOGGER;
+        } else {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel",
+                    mapDdLogLevelToSlf4jLogLevel(logLevel));
+            return LoggerFactory.getLogger(ServerlessCompatAgent.class);
+        }
     }
 
-    private static final Logger log;
-
-    static {
-        String ddLogLevel = System.getenv().getOrDefault("DD_LOG_LEVEL", "INFO").toUpperCase();
-        if (ddLogLevel.equals("OFF")) {
-            log = org.slf4j.helpers.NOPLogger.NOP_LOGGER;
-        } else {
-            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", mapDdLogLevelToSlf4jLogLevel(ddLogLevel));
-            log = LoggerFactory.getLogger(ServerlessCompatAgent.class);
-        }
+    private static String mapDdLogLevelToSlf4jLogLevel(String ddLogLevel) {
+        return "CRITICAL".equals(ddLogLevel) ? "ERROR" : ddLogLevel;
     }
 
     private static final String os = System.getProperty("os.name").toLowerCase();
