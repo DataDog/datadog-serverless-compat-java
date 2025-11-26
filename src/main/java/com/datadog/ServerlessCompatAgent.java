@@ -10,6 +10,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.NOPLogger;
 
 enum CloudEnvironment {
     AZURE_FUNCTION,
@@ -19,7 +20,24 @@ enum CloudEnvironment {
 }
 
 public class ServerlessCompatAgent {
-    private static final Logger log = LoggerFactory.getLogger(ServerlessCompatAgent.class);
+    private static final String ddLogLevel = System.getenv().getOrDefault("DD_LOG_LEVEL", "INFO").toUpperCase();
+
+    private static final Logger log = initLogger(ddLogLevel);
+
+    private static Logger initLogger(String logLevel) {
+        if ("OFF".equals(logLevel)) {
+            return NOPLogger.NOP_LOGGER;
+        } else {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel",
+                    mapDdLogLevelToSlf4jLogLevel(logLevel));
+            return LoggerFactory.getLogger(ServerlessCompatAgent.class);
+        }
+    }
+
+    private static String mapDdLogLevelToSlf4jLogLevel(String ddLogLevel) {
+        return "CRITICAL".equals(ddLogLevel) ? "ERROR" : ddLogLevel;
+    }
+
     private static final String os = System.getProperty("os.name").toLowerCase();
     private static final String binaryPath = System.getenv("DD_SERVERLESS_COMPAT_PATH");
 
@@ -65,7 +83,8 @@ public class ServerlessCompatAgent {
     }
 
     public static boolean isAzureFlexWithoutDDAzureResourceGroup() {
-        return "FlexConsumption".equals(System.getenv("WEBSITE_SKU")) && System.getenv("DD_AZURE_RESOURCE_GROUP") == null;
+        return "FlexConsumption".equals(System.getenv("WEBSITE_SKU"))
+                && System.getenv("DD_AZURE_RESOURCE_GROUP") == null;
     }
 
     public static void premain(String agentArgs, Instrumentation instrumentation) {
@@ -94,11 +113,13 @@ public class ServerlessCompatAgent {
             return;
         }
 
-        // Check for Azure Flex Consumption functions that don't have the DD_AZURE_RESOURCE_GROUP environment variable set
+        // Check for Azure Flex Consumption functions that don't have the
+        // DD_AZURE_RESOURCE_GROUP environment variable set
         if (environment == CloudEnvironment.AZURE_FUNCTION && isAzureFlexWithoutDDAzureResourceGroup()) {
-            log.error("Azure function detected on flex consumption plan without DD_AZURE_RESOURCE_GROUP set. Please set the DD_AZURE_RESOURCE_GROUP environment variable to your resource group name in Azure app settings. Shutting down Datadog Serverless Compatibility Layer.");
+            log.error(
+                    "Azure function detected on flex consumption plan without DD_AZURE_RESOURCE_GROUP set. Please set the DD_AZURE_RESOURCE_GROUP environment variable to your resource group name in Azure app settings. Shutting down Datadog Serverless Compatibility Layer.");
             return;
-        } 
+        }
 
         try (InputStream inputStream = ServerlessCompatAgent.class.getClassLoader()
                 .getResourceAsStream(fileName)) {

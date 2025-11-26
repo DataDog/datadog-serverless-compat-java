@@ -121,6 +121,20 @@
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.16</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.0.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>6.0.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -143,24 +157,11 @@
                     <target>1.8</target>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.6.0</version>
-                <configuration>
-                    <createDependencyReducedPom>false</createDependencyReducedPom>
-                    <filters>
-                        <filter>
-                            <artifact>*:*</artifact>
-                            <excludes>
-                                <exclude>module-info.class</exclude>
-                                <exclude>META-INF/*</exclude>
-                                <exclude>META-INF/versions/**</exclude>
-                                <exclude>META-INF/services/**</exclude>
-                            </excludes>
-                        </filter>
-                    </filters>
-                </configuration>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -168,6 +169,25 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <!--
+                                        Remove some cruft from the final jar.
+                                        These patterns should NOT include **/META-INF/maven/**/pom.properties, which is
+                                        used to report our own dependencies, but we should remove the top-level metadata
+                                        of vendored packages because those could trigger unwanted framework checks.
+                                    -->
+                                    <excludes>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/*</exclude>
+                                        <exclude>META-INF/versions/**</exclude>
+                                        <exclude>META-INF/maven/org.slf4j/**</exclude>
+                                        <exclude>META-INF/maven/**/pom.xml</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                             <relocations>
                                 <relocation>
                                     <pattern>org.slf4j</pattern>
@@ -175,6 +195,8 @@
                                 </relocation>
                             </relocations>
                             <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                                 <transformer
                                     implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
@@ -188,6 +210,12 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
             </plugin>
         </plugins>
     </build>
