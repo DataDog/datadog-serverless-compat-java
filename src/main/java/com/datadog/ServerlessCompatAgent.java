@@ -20,12 +20,7 @@ enum CloudEnvironment {
 
 public class ServerlessCompatAgent {
     private static String mapDdLogLevelToSlf4jLogLevel(String ddLogLevel) {
-        switch (ddLogLevel) {
-            case "CRITICAL":
-                return "ERROR";
-            default:
-                return ddLogLevel;
-        }
+        return "CRITICAL".equals(ddLogLevel) ? "ERROR" : ddLogLevel;
     }
 
     private static final Logger log;
