@@ -5,7 +5,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.datadoghq</groupId>
+
     <artifactId>dd-serverless-compat-java-agent</artifactId>
+
     <version>0.0.0</version>
     <packaging>jar</packaging>
     <name>Datadog Serverless Compatibility Layer</name>
@@ -119,7 +121,7 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
-            <version>2.0.16</version>
+            <version>2.0.17</version>
         </dependency>
 
         <dependency>
