@@ -8,7 +8,7 @@
 
     <artifactId>dd-serverless-compat-java-agent</artifactId>
 
-    <version>0.0.0</version>
+    <version>0.15.0</version>
     <packaging>jar</packaging>
     <name>Datadog Serverless Compatibility Layer</name>
     <description>Datadog Serverless Compatibility Layer for Java</description>
