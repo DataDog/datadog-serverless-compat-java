@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,7 @@ enum CloudEnvironment {
     AZURE_FUNCTION,
     AZURE_SPRING_APP,
     GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN,
+    GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN,
     UNKNOWN
 }
 
@@ -51,22 +54,37 @@ public class ServerlessCompatAgent {
 
     public static CloudEnvironment getEnvironment() {
         Map<String, String> env = System.getenv();
+        List<CloudEnvironment> detected = new ArrayList<>();
 
-        if (env.get("FUNCTIONS_EXTENSION_VERSION") != null &&
-                env.get("FUNCTIONS_WORKER_RUNTIME") != null) {
-            return CloudEnvironment.AZURE_FUNCTION;
+        if (env.get("FUNCTIONS_EXTENSION_VERSION") != null
+                && env.get("FUNCTIONS_WORKER_RUNTIME") != null) {
+            detected.add(CloudEnvironment.AZURE_FUNCTION);
         }
 
         if (env.get("ASCSVCRT_SPRING__APPLICATION__NAME") != null) {
-            return CloudEnvironment.AZURE_SPRING_APP;
+            detected.add(CloudEnvironment.AZURE_SPRING_APP);
         }
 
-        if (env.get("FUNCTION_NAME") != null &&
-                env.get("GCP_PROJECT") != null) {
-            return CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN;
+        if (env.get("K_SERVICE") != null && env.get("FUNCTION_TARGET") != null) {
+            // Set by Google Cloud Functions for newer runtimes
+            detected.add(CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN);
+        } else if (env.get("FUNCTION_NAME") != null && env.get("GCP_PROJECT") != null) {
+            // Set by Google Cloud Functions for older runtimes
+            detected.add(CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN);
         }
 
-        return CloudEnvironment.UNKNOWN;
+        if (detected.isEmpty()) {
+            log.error("No cloud environment detected");
+            return CloudEnvironment.UNKNOWN;
+        }
+        if (detected.size() > 1) {
+            log.error("Multiple cloud environments detected: {}. Returning UNKNOWN.", detected);
+            return CloudEnvironment.UNKNOWN;
+        }
+
+        CloudEnvironment environment = detected.get(0);
+        log.debug("Detected cloud environment: {}", environment);
+        return environment;
     }
 
     public static String getPackageVersion() {
