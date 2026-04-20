@@ -53,7 +53,10 @@ public class ServerlessCompatAgent {
     }
 
     public static CloudEnvironment getEnvironment() {
-        Map<String, String> env = System.getenv();
+        return getEnvironment(System.getenv());
+    }
+
+    static CloudEnvironment getEnvironment(Map<String, String> env) {
         List<CloudEnvironment> detected = new ArrayList<>();
 
         if (env.get("FUNCTIONS_EXTENSION_VERSION") != null
@@ -77,7 +80,7 @@ public class ServerlessCompatAgent {
             return CloudEnvironment.UNKNOWN;
         }
         if (detected.size() > 1) {
-            log.error("Multiple cloud environments detected: {}. Returning UNKNOWN.", detected);
+            log.error("Multiple cloud environments detected: {}", detected);
             return CloudEnvironment.UNKNOWN;
         }
 
