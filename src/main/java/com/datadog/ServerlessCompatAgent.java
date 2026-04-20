@@ -74,7 +74,6 @@ public class ServerlessCompatAgent {
         }
 
         if (detected.isEmpty()) {
-            log.error("No cloud environment detected");
             return CloudEnvironment.UNKNOWN;
         }
         if (detected.size() > 1) {
@@ -83,7 +82,6 @@ public class ServerlessCompatAgent {
         }
 
         CloudEnvironment environment = detected.get(0);
-        log.debug("Detected cloud environment: {}", environment);
         return environment;
     }
 
