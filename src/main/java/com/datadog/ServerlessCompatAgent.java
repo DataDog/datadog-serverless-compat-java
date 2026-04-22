@@ -68,12 +68,12 @@ public class ServerlessCompatAgent {
             detected.add(CloudEnvironment.AZURE_SPRING_APP);
         }
 
-        if (env.get("K_SERVICE") != null && env.get("FUNCTION_TARGET") != null) {
-            // Set by Google Cloud Functions for newer runtimes
-            detected.add(CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN);
-        } else if (env.get("FUNCTION_NAME") != null && env.get("GCP_PROJECT") != null) {
+        if (env.get("FUNCTION_NAME") != null && env.get("GCP_PROJECT") != null) {
             // Set by Google Cloud Functions for older runtimes
             detected.add(CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_1ST_GEN);
+        } else if (env.get("K_SERVICE") != null && env.get("FUNCTION_TARGET") != null) {
+            // Set by Google Cloud Functions for newer runtimes
+            detected.add(CloudEnvironment.GOOGLE_CLOUD_RUN_FUNCTION_2ND_GEN);
         }
 
         if (detected.isEmpty()) {
