@@ -1,132 +1,529 @@
 name: Build and Release the Serverless Compat Java Agent
+run-name: Java v${{ inputs.package-version }} ${{ inputs.release-state }} (${{ inputs.operation-ID }})
 
 on:
   workflow_dispatch:
     inputs:
-      publish-package:
-        description: "Build or Build and Publish?"
+      package-version:
+        description: "Java package version (x.y.z or x.y.z-suffix)"
+        required: true
+        type: string
+      published-core-version:
+        description: "Published datadog-serverless-compat version (x.y.z)"
+        required: true
+        type: string
+      operation-ID:
+        description: "Immutable parent release operation ID"
+        required: true
+        type: string
+      release-state:
+        description: "Create a draft, or publish the artifacts from its matching draft"
         required: true
         type: choice
-        default: "Build"
         options:
-          - "Build"
-          - "Build and Publish"
-      package-version-override:
-        description: "Package version override (optional, x.y.z)"
-        required: false
-        type: string
-        default: ""
+          - draft
+          - published
 
 permissions: {}
 
+concurrency:
+  group: java-release-v${{ inputs.package-version }}
+  cancel-in-progress: false
+
+env:
+  ARTIFACT_ID: dd-serverless-compat-java-agent
+  PACKAGE_VERSION: ${{ inputs.package-version }}
+  CORE_TAG: datadog-serverless-compat/v${{ inputs.published-core-version }}
+  OPERATION_ID: ${{ inputs.operation-ID }}
+  RELEASE_TAG: v${{ inputs.package-version }}
+
 jobs:
-  downloadbinaries:
+  authorize:
     runs-on: ubuntu-latest
     outputs:
-      package-version: ${{ steps.package.outputs.package-version }}
-      serverless-compat-version: ${{ steps.serverless-compat-binary.outputs.serverless-compat-version }}
+      release-id: ${{ steps.release.outputs.release-id }}
+      release-exists: ${{ steps.release.outputs.release-exists }}
+      release-is-draft: ${{ steps.release.outputs.release-is-draft }}
+    permissions:
+      contents: read
+    env:
+      EXPECTED_RELEASE_ACTOR: ${{ vars.RELEASE_AUTOMATION_ACTOR }}
+      RELEASE_STATE: ${{ inputs.release-state }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - id: package
+      - name: Authorize dispatch and validate immutable inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
-          if [[ -n "${{ github.event.inputs.package-version-override }}" ]]; then
-            PACKAGE_VERSION="${{ github.event.inputs.package-version-override }}"
-          else
-            if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-              echo "Invalid tag format: $GITHUB_REF, must be in the form vMAJOR.MINOR.PATCH"
-              exit 1
-            fi
-            PACKAGE_VERSION="${GITHUB_REF#refs/tags/v}"
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            echo "Release execution requires workflow_dispatch" >&2
+            exit 1
+          fi
+          if [[ -z "$EXPECTED_RELEASE_ACTOR" ]]; then
+            echo "RELEASE_AUTOMATION_ACTOR is not configured with the observed managed-App actor" >&2
+            exit 1
+          fi
+          if [[ "$ACTOR" != "$EXPECTED_RELEASE_ACTOR" || "$TRIGGERING_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]]; then
+            echo "Release dispatch actor is not the approved managed App" >&2
+            exit 1
+          fi
+          if [[ ! "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Invalid package-version: $PACKAGE_VERSION" >&2
+            exit 1
+          fi
+          if [[ ! "${{ inputs.published-core-version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid published-core-version: ${{ inputs.published-core-version }}" >&2
+            exit 1
+          fi
+          if [[ ! "$OPERATION_ID" =~ ^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$ ]]; then
+            echo "Invalid operation-ID" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_STATE" != "draft" && "$RELEASE_STATE" != "published" ]]; then
+            echo "Invalid release-state: $RELEASE_STATE" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]]; then
+            echo "Expected refs/tags/$RELEASE_TAG, got $GITHUB_REF" >&2
+            exit 1
           fi
 
-          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-      - id: serverless-compat-binary
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify source tag and published core release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          RESPONSE=$(curl -s "https://api.github.com/repos/datadog/serverless-components/releases")
-          SERVERLESS_COMPAT_VERSION=$(echo "$RESPONSE" | jq -r --arg pattern "datadog-serverless-compat\/v[0-9]*\.[0-9]*\.[0-9]*" '.[] | select(.tag_name | test($pattern)) | .tag_name' | sort -V | tail -n 1)
+          set -euo pipefail
 
-          echo "Using version ${SERVERLESS_COMPAT_VERSION} of Serverless Compatibility Layer binary"
-          echo "serverless-compat-version=$(echo "$SERVERLESS_COMPAT_VERSION" | jq -rR 'ltrimstr("sls-")')" >> "$GITHUB_OUTPUT"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
 
-          curl --output-dir ./temp/ --create-dirs -O -s -L "https://github.com/DataDog/serverless-components/releases/download/${SERVERLESS_COMPAT_VERSION}/datadog-serverless-compat.zip"
-          unzip ./temp/datadog-serverless-compat.zip -d ./
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: bin
-          path: bin
-  build:
-    needs: [downloadbinaries]
-    runs-on: ubuntu-latest
-    env:
-      PACKAGE_VERSION: ${{ needs.downloadbinaries.outputs.package-version }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-      - uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
-        with:
-          java-version: "21"
-          distribution: "zulu"
-      - run: mvn versions:set -DnewVersion=${{ env.PACKAGE_VERSION }}
-      - run: mvn -P release clean package
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: build
-          path: target/dd-serverless-compat-java-agent-${{ env.PACKAGE_VERSION }}.jar
-  publish:
-    if: ${{ github.event.inputs.publish-package == 'Build and Publish' }}
-    needs: [downloadbinaries]
-    runs-on: ubuntu-latest
-    env:
-      PACKAGE_VERSION: ${{ needs.downloadbinaries.outputs.package-version }}
-      SONATYPE_USER: ${{secrets.SONATYPE_USER}}
-      SONATYPE_PASS: ${{secrets.SONATYPE_PASS}}
-      GPG_PASSPHRASE: ${{secrets.GPG_PASSPHRASE}}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-      - uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
-        with:
-          java-version: "21"
-          distribution: "zulu"
-          server-id: "central"
-          server-username: "SONATYPE_USER"
-          server-password: "SONATYPE_PASS"
-          gpg-private-key: ${{secrets.GPG_SIGNING_KEY}}
-          gpg-passphrase: "GPG_PASSPHRASE"
-      - run: mvn versions:set -DnewVersion=${{ env.PACKAGE_VERSION }}
-      - run: mvn -P release clean deploy
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: target
-          path: target/dd-serverless-compat-java-agent-${{ env.PACKAGE_VERSION }}.jar
-  release:
-    if: ${{ github.event.inputs.publish-package == 'Build and Publish' }}
-    needs: [downloadbinaries, publish]
+          core_release=$(gh api "repos/DataDog/serverless-components/releases/tags/$CORE_TAG")
+          test "$(jq -r .tag_name <<<"$core_release")" = "$CORE_TAG"
+          test "$(jq -r .draft <<<"$core_release")" = "false"
+          test "$(jq -r .prerelease <<<"$core_release")" = "false"
+          if [[ "$(jq '[.assets[] | select(.name == "datadog-serverless-compat.zip")] | length' <<<"$core_release")" != "1" ]]; then
+            echo "Published core release must contain exactly one datadog-serverless-compat.zip asset" >&2
+            exit 1
+          fi
+
+      - id: release
+        name: Inspect the versioned GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          error_file=$(mktemp)
+          if release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" 2>"$error_file"); then
+            test "$(jq -r .tag_name <<<"$release")" = "$RELEASE_TAG"
+            body=$(jq -r .body <<<"$release")
+            grep -Fq "Core release: $CORE_TAG" <<<"$body"
+            grep -Fq "Source commit: $GITHUB_SHA" <<<"$body"
+            echo "release-id=$(jq -r .id <<<"$release")" >> "$GITHUB_OUTPUT"
+            echo "release-exists=true" >> "$GITHUB_OUTPUT"
+            echo "release-is-draft=$(jq -r .draft <<<"$release")" >> "$GITHUB_OUTPUT"
+          elif grep -Eq 'HTTP 404|Not Found' "$error_file"; then
+            echo "release-id=" >> "$GITHUB_OUTPUT"
+            echo "release-exists=false" >> "$GITHUB_OUTPUT"
+            echo "release-is-draft=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$error_file" >&2
+            exit 1
+          fi
+
+  draft:
+    if: ${{ inputs.release-state == 'draft' }}
+    needs: authorize
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
-      PACKAGE_VERSION: ${{ needs.downloadbinaries.outputs.package-version }}
-      SERVERLESS_COMPAT_VERSION: ${{ needs.downloadbinaries.outputs.serverless-compat-version }}
+      GH_TOKEN: ${{ github.token }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-      - run: |
-          cp target/dd-serverless-compat-java-agent-${{ env.PACKAGE_VERSION }}.jar target/dd-serverless-compat-java-agent.jar
-      - uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974 # v2.1.0
         with:
-          body: "Uses [${{ env.SERVERLESS_COMPAT_VERSION }}](https://github.com/DataDog/serverless-components/releases/tag/${{ env.SERVERLESS_COMPAT_VERSION }}) of the Serverless Compatibility Layer binary."
-          draft: true
-          tag_name: "v${{ env.PACKAGE_VERSION }}"
-          generate_release_notes: true
-          make_latest: true
-          files: |
-            target/dd-serverless-compat-java-agent-${{ env.PACKAGE_VERSION }}.jar
-            target/dd-serverless-compat-java-agent.jar
-      - uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974 # v2.1.0
+          persist-credentials: false
+
+      - uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
         with:
-          name: Latest
-          tag_name: download-latest
-          body: "This release tracks the latest version available, currently **${{ env.PACKAGE_VERSION }}**."
-          files: |
-            target/dd-serverless-compat-java-agent.jar
+          java-version: "21"
+          distribution: "zulu"
+          gpg-private-key: ${{ secrets.GPG_SIGNING_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Reuse the signed bundle from a matching draft
+        id: reuse
+        if: ${{ needs.authorize.outputs.release-exists == 'true' }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ needs.authorize.outputs.release-is-draft }}" != "true" ]]; then
+            echo "The versioned Release is already published; it cannot be recreated as a draft" >&2
+            exit 1
+          fi
+
+          mapfile -t assets < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort)
+          bundle_name="$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip"
+          allowed=$(printf '%s\n' "$bundle_name" "$ARTIFACT_ID-$PACKAGE_VERSION.jar" "$ARTIFACT_ID.jar" | sort)
+          actual=$(printf '%s\n' "${assets[@]}" | sort)
+          if [[ "$actual" != "$allowed" ]]; then
+            echo "Existing draft has missing or conflicting assets" >&2
+            printf 'Expected:\n%s\nActual:\n%s\n' "$allowed" "$actual" >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --dir release-assets
+          echo "reuse=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download the exact published core binary
+        if: ${{ steps.reuse.outputs.reuse != 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p temp
+          gh release download "$CORE_TAG" \
+            --repo DataDog/serverless-components \
+            --pattern datadog-serverless-compat.zip \
+            --dir temp
+          unzip -q temp/datadog-serverless-compat.zip -d .
+
+      - name: Build and sign the Central bundle without deploying
+        if: ${{ steps.reuse.outputs.reuse != 'true' }}
+        run: |
+          set -euo pipefail
+          mvn versions:set -DnewVersion="$PACKAGE_VERSION"
+          mvn -P release clean verify
+
+          coordinate_path="com/datadoghq/$ARTIFACT_ID/$PACKAGE_VERSION"
+          bundle_root="release-assets/bundle/$coordinate_path"
+          mkdir -p "$bundle_root"
+          cp pom.xml "$bundle_root/$ARTIFACT_ID-$PACKAGE_VERSION.pom"
+          cp pom.xml.asc "$bundle_root/$ARTIFACT_ID-$PACKAGE_VERSION.pom.asc"
+          for classifier in "" -sources -javadoc; do
+            cp "target/$ARTIFACT_ID-$PACKAGE_VERSION$classifier.jar" "$bundle_root/"
+            cp "target/$ARTIFACT_ID-$PACKAGE_VERSION$classifier.jar.asc" "$bundle_root/"
+          done
+
+          (
+            cd release-assets/bundle
+            zip -qr "../$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip" com
+          )
+          cp "$bundle_root/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID-$PACKAGE_VERSION.jar"
+          cp "$bundle_root/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID.jar"
+
+      - name: Verify signed artifacts and aliases
+        run: |
+          set -euo pipefail
+          bundle_name="$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip"
+          rm -rf verified-bundle
+          unzip -q "release-assets/$bundle_name" -d verified-bundle
+          coordinate_path="verified-bundle/com/datadoghq/$ARTIFACT_ID/$PACKAGE_VERSION"
+          expected_files=$(printf '%s\n' \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.pom" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.pom.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.jar.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar.asc" | sort)
+          actual_files=$(find "$coordinate_path" -maxdepth 1 -type f -exec basename {} \; | sort)
+          test "$actual_files" = "$expected_files"
+
+          for file in \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.pom" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar"; do
+            gpg --batch --verify "$file.asc" "$file"
+          done
+          cmp "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID-$PACKAGE_VERSION.jar"
+          cmp "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID.jar"
+
+      - name: Create the draft Release and attach the signed artifacts
+        if: ${{ steps.reuse.outputs.reuse != 'true' }}
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          Uses [$CORE_TAG](https://github.com/DataDog/serverless-components/releases/tag/$CORE_TAG) of the Serverless Compatibility Layer binary.
+
+          Core release: $CORE_TAG
+          Source commit: $GITHUB_SHA
+          Draft operation: $OPERATION_ID
+          EOF
+          )
+
+          if [[ "${{ needs.authorize.outputs.release-exists }}" == "false" ]]; then
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --verify-tag \
+              --generate-notes \
+              --title "$RELEASE_TAG" \
+              --notes "$body"
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "release-assets/$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip" \
+            "release-assets/$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "release-assets/$ARTIFACT_ID.jar"
+
+  published:
+    if: ${{ inputs.release-state == 'published' }}
+    needs: authorize
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SONATYPE_USER: ${{ secrets.SONATYPE_USER }}
+      SONATYPE_PASS: ${{ secrets.SONATYPE_PASS }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+    steps:
+      - name: Require the matching draft or a resumable published Release
+        run: |
+          set -euo pipefail
+          if [[ "${{ needs.authorize.outputs.release-exists }}" != "true" ]]; then
+            echo "The matching draft Release does not exist" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        with:
+          java-version: "21"
+          distribution: "zulu"
+          gpg-private-key: ${{ secrets.GPG_SIGNING_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Download only the exact draft assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --dir release-assets
+
+          bundle_name="$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip"
+          allowed=$(printf '%s\n' \
+            "$bundle_name" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "$ARTIFACT_ID.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-central-deployment.json" | sort)
+          actual=$(find release-assets -maxdepth 1 -type f -exec basename {} \; | sort)
+          if [[ "$actual" != "$(printf '%s\n' "$allowed" | grep -v central-deployment.json)" && "$actual" != "$allowed" ]]; then
+            echo "Versioned Release assets conflict with the expected signed draft" >&2
+            printf 'Allowed:\n%s\nActual:\n%s\n' "$allowed" "$actual" >&2
+            exit 1
+          fi
+
+          unzip -q "release-assets/$bundle_name" -d verified-bundle
+          coordinate_path="verified-bundle/com/datadoghq/$ARTIFACT_ID/$PACKAGE_VERSION"
+          expected_files=$(printf '%s\n' \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.pom" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.pom.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION.jar.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar.asc" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar" \
+            "$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar.asc" | sort)
+          actual_files=$(find "$coordinate_path" -maxdepth 1 -type f -exec basename {} \; | sort)
+          test "$actual_files" = "$expected_files"
+
+          for file in \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.pom" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION-sources.jar" \
+            "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION-javadoc.jar"; do
+            gpg --batch --verify "$file.asc" "$file"
+          done
+          cmp "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID-$PACKAGE_VERSION.jar"
+          cmp "$coordinate_path/$ARTIFACT_ID-$PACKAGE_VERSION.jar" "release-assets/$ARTIFACT_ID.jar"
+
+      - name: Reconcile or create the user-managed Central deployment
+        id: central
+        env:
+          MARKER: release-assets/${{ env.ARTIFACT_ID }}-${{ env.PACKAGE_VERSION }}-central-deployment.json
+        run: |
+          set -euo pipefail
+          bundle="release-assets/$ARTIFACT_ID-$PACKAGE_VERSION-central-bundle.zip"
+          bundle_sha=$(sha256sum "$bundle" | cut -d' ' -f1)
+          deployment_name="$ARTIFACT_ID-$PACKAGE_VERSION-$bundle_sha"
+          auth=$(printf '%s:%s' "$SONATYPE_USER" "$SONATYPE_PASS" | base64 -w0)
+
+          if [[ -f "$MARKER" ]]; then
+            test "$(jq -r .bundleSha256 "$MARKER")" = "$bundle_sha"
+            test "$(jq -r .deploymentName "$MARKER")" = "$deployment_name"
+            deployment_id=$(jq -r '.deploymentId // empty' "$MARKER")
+            marker_state=$(jq -r .state "$MARKER")
+            if [[ -z "$deployment_id" ]]; then
+              if [[ "$marker_state" == "published" ]]; then
+                echo "The exact artifacts were already published to Maven Central"
+                exit 0
+              fi
+              echo "A prior Central upload may have started without recording a deployment ID; refusing to duplicate it" >&2
+              exit 1
+            fi
+          else
+            coordinate_path="com/datadoghq/$ARTIFACT_ID/$PACKAGE_VERSION"
+            published_count=0
+            while IFS= read -r artifact; do
+              remote=$(mktemp)
+              status_code=$(curl --silent --show-error --location \
+                --output "$remote" \
+                --write-out '%{http_code}' \
+                "https://repo.maven.apache.org/maven2/$coordinate_path/$artifact")
+              case "$status_code" in
+                200)
+                  cmp "verified-bundle/$coordinate_path/$artifact" "$remote"
+                  published_count=$((published_count + 1))
+                  ;;
+                404)
+                  ;;
+                *)
+                  echo "Maven Central lookup failed with HTTP $status_code for $artifact" >&2
+                  exit 1
+                  ;;
+              esac
+              rm -f "$remote"
+            done < <(find "verified-bundle/$coordinate_path" -maxdepth 1 -type f -exec basename {} \; | sort)
+
+            if [[ "$published_count" == "8" ]]; then
+              jq -n \
+                --arg bundleSha256 "$bundle_sha" \
+                --arg deploymentName "$deployment_name" \
+                --arg packageVersion "$PACKAGE_VERSION" \
+                '{bundleSha256: $bundleSha256, deploymentName: $deploymentName, packageVersion: $packageVersion, state: "published", deploymentId: null}' > "$MARKER"
+              gh release upload "$RELEASE_TAG" "$MARKER"
+              echo "The exact artifacts are already published to Maven Central"
+              exit 0
+            elif [[ "$published_count" != "0" ]]; then
+              echo "Maven Central contains only part of the expected coordinate or conflicting files" >&2
+              exit 1
+            fi
+
+            jq -n \
+              --arg bundleSha256 "$bundle_sha" \
+              --arg deploymentName "$deployment_name" \
+              --arg packageVersion "$PACKAGE_VERSION" \
+              '{bundleSha256: $bundleSha256, deploymentName: $deploymentName, packageVersion: $packageVersion, state: "uploading", deploymentId: null}' > "$MARKER"
+            gh release upload "$RELEASE_TAG" "$MARKER"
+
+            encoded_name=$(jq -rn --arg value "$deployment_name" '$value | @uri')
+            response_file=$(mktemp)
+            status_code=$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "Authorization: Bearer $auth" \
+              --form "bundle=@$bundle" \
+              "https://central.sonatype.com/api/v1/publisher/upload?name=$encoded_name&publishingType=USER_MANAGED")
+            if [[ "$status_code" != "201" ]]; then
+              echo "Central upload failed with HTTP $status_code; the deployment intent is retained to prevent an unsafe retry" >&2
+              cat "$response_file" >&2
+              exit 1
+            fi
+            deployment_id=$(tr -d '"[:space:]' < "$response_file")
+            if [[ ! "$deployment_id" =~ ^[0-9A-Za-z-]+$ ]]; then
+              echo "Central returned an invalid deployment ID" >&2
+              exit 1
+            fi
+
+            jq -n \
+              --arg bundleSha256 "$bundle_sha" \
+              --arg deploymentName "$deployment_name" \
+              --arg packageVersion "$PACKAGE_VERSION" \
+              --arg deploymentId "$deployment_id" \
+              '{bundleSha256: $bundleSha256, deploymentName: $deploymentName, packageVersion: $packageVersion, state: "uploaded", deploymentId: $deploymentId}' > "$MARKER"
+            gh release upload "$RELEASE_TAG" "$MARKER" --clobber
+          fi
+
+          for attempt in $(seq 1 60); do
+            status=$(curl --fail --silent --show-error \
+              --header "Authorization: Bearer $auth" \
+              "https://central.sonatype.com/api/v1/publisher/status?id=$deployment_id")
+            state=$(jq -r .deploymentState <<<"$status")
+            case "$state" in
+              VALIDATED|PUBLISHING|PUBLISHED)
+                jq --arg state "${state,,}" '.state = $state' "$MARKER" > "$MARKER.tmp"
+                mv "$MARKER.tmp" "$MARKER"
+                gh release upload "$RELEASE_TAG" "$MARKER" --clobber
+                echo "Central deployment $deployment_id is $state"
+                exit 0
+                ;;
+              PENDING|VALIDATING)
+                sleep 10
+                ;;
+              *)
+                echo "Central deployment $deployment_id is in conflicting state $state" >&2
+                exit 1
+                ;;
+            esac
+          done
+          echo "Timed out waiting for Central to validate deployment $deployment_id" >&2
+          exit 1
+
+      - name: Publish the versioned GitHub Release
+        if: ${{ needs.authorize.outputs.release-is-draft == 'true' }}
+        run: |
+          set -euo pipefail
+          current_body=$(gh release view "$RELEASE_TAG" --json body --jq .body)
+          body=$(cat <<EOF
+          $current_body
+
+          Published operation: $OPERATION_ID
+          Maven Central deployment uses user-managed publication (autoPublish=false); Central Publish remains a separate human action.
+          EOF
+          )
+          gh release edit "$RELEASE_TAG" --draft=false --latest --notes "$body"
+
+      - name: Promote the stable download-latest Release
+        run: |
+          set -euo pipefail
+          latest_body="This release tracks the latest version available, currently **$PACKAGE_VERSION**."
+          latest_asset="release-assets/$ARTIFACT_ID.jar"
+
+          latest_error=$(mktemp)
+          if latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/download-latest" 2>"$latest_error"); then
+            current_body=$(jq -r .body <<<"$latest")
+            if [[ "$current_body" =~ currently\ \*\*([^*]+)\*\* ]]; then
+              current_version="${BASH_REMATCH[1]}"
+              newest=$(printf '%s\n%s\n' "$current_version" "$PACKAGE_VERSION" | sort -V | tail -n1)
+              if [[ "$newest" != "$PACKAGE_VERSION" ]]; then
+                echo "download-latest already names newer version $current_version" >&2
+                exit 1
+              fi
+            elif [[ -n "$current_body" && "$current_body" != "$latest_body" ]]; then
+              echo "download-latest has an unrecognized release body" >&2
+              exit 1
+            else
+              current_version=""
+            fi
+
+            asset_count=$(jq --arg name "$ARTIFACT_ID.jar" '[.assets[] | select(.name == $name)] | length' <<<"$latest")
+            total_assets=$(jq '.assets | length' <<<"$latest")
+            if [[ "$asset_count" != "1" || "$total_assets" != "1" ]]; then
+              echo "download-latest assets conflict with the stable Java agent contract" >&2
+              exit 1
+            fi
+
+            if [[ "$current_version" == "$PACKAGE_VERSION" ]]; then
+              mkdir -p current-latest
+              gh release download download-latest --pattern "$ARTIFACT_ID.jar" --dir current-latest
+              cmp "$latest_asset" "current-latest/$ARTIFACT_ID.jar"
+            else
+              gh release upload download-latest "$latest_asset" --clobber
+            fi
+            gh release edit download-latest --draft=false --title Latest --notes "$latest_body"
+          elif grep -Eq 'HTTP 404|Not Found' "$latest_error"; then
+            gh release create download-latest \
+              --title Latest \
+              --notes "$latest_body" \
+              "$latest_asset"
+          else
+            cat "$latest_error" >&2
+            exit 1
+          fi
