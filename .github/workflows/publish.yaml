@@ -104,7 +104,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
 
-          core_release=$(gh api "repos/DataDog/serverless-components/releases/tags/$CORE_TAG")
+          encoded_core_tag=$(jq -rn --arg value "$CORE_TAG" '$value | @uri')
+          core_release=$(gh api "repos/DataDog/serverless-components/releases/tags/$encoded_core_tag")
           test "$(jq -r .tag_name <<<"$core_release")" = "$CORE_TAG"
           test "$(jq -r .draft <<<"$core_release")" = "false"
           test "$(jq -r .prerelease <<<"$core_release")" = "false"
