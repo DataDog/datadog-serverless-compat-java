@@ -197,11 +197,17 @@ public class ServerlessCompatAgent {
             String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
+            NamedPipeNames pipeNames = null;
             if (environment == CloudEnvironment.AZURE_FUNCTION && isWindows()) {
-                configureNamedPipes();
+                pipeNames = configureNamedPipes();
             }
 
             ProcessBuilder processBuilder = createProcessBuilder(executableFile, packageVersion);
+            if (pipeNames != null) {
+                processBuilder.environment().put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
+                processBuilder.environment().put(NamedPipeNames.DOGSTATSD_WINDOWS_PIPE_NAME_ENV,
+                        pipeNames.dogstatsdPipeName);
+            }
             processBuilder.inheritIO();
             processBuilder.start();
         } catch (Exception e) {
