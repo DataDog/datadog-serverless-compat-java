@@ -106,6 +106,34 @@ public class ServerlessCompatAgent {
                 && System.getenv("DD_AZURE_RESOURCE_GROUP") == null;
     }
 
+    /**
+     * Gives this function its own named pipes when dd-java-agent supports them. The tracer reads
+     * these system properties before its environment variables, so they must be set before
+     * dd-java-agent's premain runs. When the gate fails, nothing is set and the tracer keeps
+     * whatever it inherited: TCP and UDP by default, or the customer's own pipe settings.
+     *
+     * @return the chosen pipe names, or null when named pipes are off
+     */
+    static NamedPipeNames configureNamedPipes() {
+        TracerVersionGate gate = TracerVersionGate.check();
+        if (!gate.passed) {
+            log.info("Named pipes are off, keeping inherited trace and DogStatsD settings: {}", gate.reason);
+            return null;
+        }
+        log.debug("Named pipes are on: {}", gate.reason);
+
+        NamedPipeNames pipeNames = NamedPipeNames.choose(System.getenv(), System.getProperties());
+        for (String warning : pipeNames.warnings) {
+            log.warn(warning);
+        }
+
+        System.setProperty(NamedPipeNames.TRACE_PIPE_NAME_PROPERTY, pipeNames.tracePipeName);
+        System.setProperty(NamedPipeNames.DOGSTATSD_PIPE_NAME_PROPERTY, pipeNames.dogstatsdPipeName);
+        log.info("Configured named pipes - Trace: {}, DogStatsD: {}",
+                pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
+        return pipeNames;
+    }
+
     public static void premain(String agentArgs, Instrumentation instrumentation) {
         CloudEnvironment environment = getEnvironment();
         log.debug("Environment detected: {}", environment);
@@ -169,8 +197,18 @@ public class ServerlessCompatAgent {
             String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
+            NamedPipeNames pipeNames = null;
+            if (environment == CloudEnvironment.AZURE_FUNCTION && isWindows()) {
+                pipeNames = configureNamedPipes();
+            }
+
             ProcessBuilder processBuilder = new ProcessBuilder(executableFile.getAbsolutePath());
             processBuilder.environment().put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
+            if (pipeNames != null) {
+                processBuilder.environment().put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
+                processBuilder.environment().put(NamedPipeNames.DOGSTATSD_WINDOWS_PIPE_NAME_ENV,
+                        pipeNames.dogstatsdPipeName);
+            }
             processBuilder.inheritIO();
             processBuilder.start();
         } catch (Exception e) {
