@@ -95,6 +95,13 @@ jobs:
           gpg-passphrase: "GPG_PASSPHRASE"
       - run: mvn versions:set -DnewVersion=${{ env.PACKAGE_VERSION }}
       - run: mvn -P release clean deploy
+      - if: always()
+        run: unzip -l target/central-publishing/central-bundle.zip
+      - if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: central-bundle
+          path: target/central-publishing/central-bundle.zip
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: target
