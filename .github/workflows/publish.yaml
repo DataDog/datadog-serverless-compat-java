@@ -93,6 +93,7 @@ jobs:
           server-password: "SONATYPE_PASS"
           gpg-private-key: ${{secrets.GPG_SIGNING_KEY}}
           gpg-passphrase: "GPG_PASSPHRASE"
+      - run: mvn -v
       - run: mvn versions:set -DnewVersion=${{ env.PACKAGE_VERSION }}
       - run: mvn -P release clean deploy
       - if: always()
