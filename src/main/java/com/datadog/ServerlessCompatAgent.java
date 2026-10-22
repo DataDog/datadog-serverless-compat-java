@@ -43,6 +43,8 @@ public class ServerlessCompatAgent {
 
     private static final String os = System.getProperty("os.name").toLowerCase();
     private static final String binaryPath = System.getenv("DD_SERVERLESS_COMPAT_PATH");
+    static final String DOGSTATSD_PORT_ENV = "DD_DOGSTATSD_PORT";
+    static final String DEFAULT_DOGSTATSD_PORT = "8125";
 
     public static boolean isWindows() {
         return os.contains("win");
@@ -134,6 +136,23 @@ public class ServerlessCompatAgent {
         return pipeNames;
     }
 
+    /**
+     * Gives the binary this function's pipe names and asks it to keep listening on UDP too.
+     *
+     * <p>With a pipe set, the binary listens on UDP only when {@code DD_DOGSTATSD_PORT} is set,
+     * because a binary without a pipe panics when another binary on the instance takes 8125.
+     * The .NET and Node compatibility layers don't need UDP: they point their in-process
+     * DogStatsD clients at the pipe through environment variables. Java can't, because a JVM
+     * can't change its own environment after it starts. A DogStatsD client that doesn't read
+     * the {@code dd.dogstatsd.pipe.name} system property, or can't open the pipe, still sends to
+     * UDP 8125, so this asks the binary to listen there. A port the customer already set wins.
+     */
+    static void addPipeSettings(Map<String, String> binaryEnvironment, NamedPipeNames pipeNames) {
+        binaryEnvironment.put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
+        binaryEnvironment.put(NamedPipeNames.DOGSTATSD_WINDOWS_PIPE_NAME_ENV, pipeNames.dogstatsdPipeName);
+        binaryEnvironment.putIfAbsent(DOGSTATSD_PORT_ENV, DEFAULT_DOGSTATSD_PORT);
+    }
+
     public static void premain(String agentArgs, Instrumentation instrumentation) {
         CloudEnvironment environment = getEnvironment();
         log.debug("Environment detected: {}", environment);
@@ -205,9 +224,7 @@ public class ServerlessCompatAgent {
             ProcessBuilder processBuilder = new ProcessBuilder(executableFile.getAbsolutePath());
             processBuilder.environment().put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
             if (pipeNames != null) {
-                processBuilder.environment().put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
-                processBuilder.environment().put(NamedPipeNames.DOGSTATSD_WINDOWS_PIPE_NAME_ENV,
-                        pipeNames.dogstatsdPipeName);
+                addPipeSettings(processBuilder.environment(), pipeNames);
             }
             processBuilder.inheritIO();
             processBuilder.start();

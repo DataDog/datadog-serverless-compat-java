@@ -3,6 +3,7 @@ package com.datadog;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -34,6 +35,35 @@ class ServerlessCompatAgentTest {
             assertEquals(expectedSlf4jLevel,
                     System.getProperty("org.slf4j.simpleLogger.defaultLogLevel"));
         }
+    }
+
+    private static NamedPipeNames pipeNames() {
+        Map<String, String> env = new HashMap<>();
+        env.put("DD_APM_WINDOWS_PIPE_NAME", "trace_pipe");
+        env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_pipe");
+        return NamedPipeNames.choose(env, new Properties());
+    }
+
+    @Test
+    void addPipeSettings_asksBinaryToKeepUdp() {
+        Map<String, String> binaryEnvironment = new HashMap<>();
+
+        ServerlessCompatAgent.addPipeSettings(binaryEnvironment, pipeNames());
+
+        assertEquals("trace_pipe", binaryEnvironment.get("DD_APM_WINDOWS_PIPE_NAME"));
+        assertEquals("dogstatsd_pipe", binaryEnvironment.get("DD_DOGSTATSD_WINDOWS_PIPE_NAME"));
+        // With a pipe, the binary listens on UDP only when the port is set.
+        assertEquals("8125", binaryEnvironment.get("DD_DOGSTATSD_PORT"));
+    }
+
+    @Test
+    void addPipeSettings_keepsCustomerPort() {
+        Map<String, String> binaryEnvironment = new HashMap<>();
+        binaryEnvironment.put("DD_DOGSTATSD_PORT", "0");
+
+        ServerlessCompatAgent.addPipeSettings(binaryEnvironment, pipeNames());
+
+        assertEquals("0", binaryEnvironment.get("DD_DOGSTATSD_PORT"));
     }
 
     @Test
