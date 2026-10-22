@@ -1,6 +1,7 @@
 package com.datadog;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -42,6 +43,25 @@ class ServerlessCompatAgentTest {
         env.put("DD_APM_WINDOWS_PIPE_NAME", "trace_pipe");
         env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_pipe");
         return NamedPipeNames.choose(env, new Properties());
+    }
+
+    @Test
+    void configureNamedPipes_failedGateGivesPipesToBinaryOnly() {
+        // No -javaagent options, so the gate fails because dd-java-agent is missing.
+        TracerVersionGate gate = TracerVersionGate.check(Collections.emptyList());
+        assertFalse(gate.passed);
+        Properties systemProperties = new Properties();
+
+        NamedPipeNames pipeNames = ServerlessCompatAgent.configureNamedPipes(gate, new HashMap<>(),
+                systemProperties);
+
+        // The binary still gets pipes, but an older tracer must never see them: it would hang
+        // or throw on a pipe.
+        assertNotNull(pipeNames);
+        assertTrue(pipeNames.tracePipeName.startsWith("dd_trace_"));
+        assertTrue(pipeNames.dogstatsdPipeName.startsWith("dd_dogstatsd_"));
+        assertNull(systemProperties.getProperty("dd.trace.pipe.name"));
+        assertNull(systemProperties.getProperty("dd.dogstatsd.pipe.name"));
     }
 
     @Test

@@ -10,6 +10,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.NOPLogger;
@@ -109,28 +110,40 @@ public class ServerlessCompatAgent {
     }
 
     /**
-     * Gives this function its own named pipes when dd-java-agent supports them. The tracer reads
-     * these system properties before its environment variables, so they must be set before
-     * dd-java-agent's premain runs. When the gate fails, nothing is set and the tracer keeps
-     * whatever it inherited: TCP and UDP by default, or the customer's own pipe settings.
+     * Chooses this function's named pipes. The binary always gets them, as the .NET compatibility
+     * layer gives its binary pipes whether or not a tracer is present, so the binary never
+     * panics when another binary on the instance owns UDP 8125.
      *
-     * @return the chosen pipe names, or null when named pipes are off
+     * <p>dd-java-agent gets the pipes, as system properties, only when it is new enough to use
+     * them. The tracer reads these properties before its environment variables, so they must be
+     * set before dd-java-agent's premain runs. When the gate fails, nothing is set for the
+     * tracer, and it keeps whatever it inherited: TCP and UDP by default, or the customer's own
+     * pipe settings. The tracer only learns a pipe name from its own configuration, never from
+     * the binary, so the binary's pipes don't reach an older tracer.
+     *
+     * @return the chosen pipe names for the binary
      */
     static NamedPipeNames configureNamedPipes() {
-        TracerVersionGate gate = TracerVersionGate.check();
-        if (!gate.passed) {
-            log.info("Named pipes are off, keeping inherited trace and DogStatsD settings: {}", gate.reason);
-            return null;
-        }
-        log.debug("Named pipes are on: {}", gate.reason);
+        return configureNamedPipes(TracerVersionGate.check(), System.getenv(), System.getProperties());
+    }
 
-        NamedPipeNames pipeNames = NamedPipeNames.choose(System.getenv(), System.getProperties());
+    static NamedPipeNames configureNamedPipes(TracerVersionGate gate, Map<String, String> env,
+            Properties systemProperties) {
+        NamedPipeNames pipeNames = NamedPipeNames.choose(env, systemProperties);
         for (String warning : pipeNames.warnings) {
             log.warn(warning);
         }
 
-        System.setProperty(NamedPipeNames.TRACE_PIPE_NAME_PROPERTY, pipeNames.tracePipeName);
-        System.setProperty(NamedPipeNames.DOGSTATSD_PIPE_NAME_PROPERTY, pipeNames.dogstatsdPipeName);
+        if (!gate.passed) {
+            log.info("Tracer named pipes are off, so dd-java-agent keeps its inherited trace and DogStatsD "
+                    + "settings: {}. The binary still listens on pipes {} and {}, TCP, and UDP.",
+                    gate.reason, pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
+            return pipeNames;
+        }
+        log.debug("Tracer named pipes are on: {}", gate.reason);
+
+        systemProperties.setProperty(NamedPipeNames.TRACE_PIPE_NAME_PROPERTY, pipeNames.tracePipeName);
+        systemProperties.setProperty(NamedPipeNames.DOGSTATSD_PIPE_NAME_PROPERTY, pipeNames.dogstatsdPipeName);
         log.info("Configured named pipes - Trace: {}, DogStatsD: {}",
                 pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
         return pipeNames;
