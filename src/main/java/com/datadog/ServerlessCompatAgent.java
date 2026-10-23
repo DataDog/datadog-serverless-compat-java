@@ -110,16 +110,13 @@ public class ServerlessCompatAgent {
     }
 
     /**
-     * Chooses this function's named pipes. The binary always gets them, as the .NET compatibility
-     * layer gives its binary pipes whether or not a tracer is present, so the binary never
-     * panics when another binary on the instance owns UDP 8125.
+     * Chooses this function's named pipes. The binary always gets them, so it warns instead of
+     * panicking when another binary on the instance owns a port.
      *
-     * <p>dd-java-agent gets the pipes, as system properties, only when it is new enough to use
-     * them. The tracer reads these properties before its environment variables, so they must be
-     * set before dd-java-agent's premain runs. When the gate fails, nothing is set for the
-     * tracer, and it keeps whatever it inherited: TCP and UDP by default, or the customer's own
-     * pipe settings. The tracer only learns a pipe name from its own configuration, never from
-     * the binary, so the binary's pipes don't reach an older tracer.
+     * <p>dd-java-agent gets them, as system properties, only when the gate says it can use pipes;
+     * the properties must be set before its premain runs. Otherwise the tracer keeps what it
+     * inherited. It learns a pipe name only from its own configuration, so the binary's pipes
+     * can't reach an older tracer.
      *
      * @return the chosen pipe names for the binary
      */
@@ -150,15 +147,10 @@ public class ServerlessCompatAgent {
     }
 
     /**
-     * Gives the binary this function's pipe names and asks it to keep listening on UDP too.
-     *
-     * <p>With a pipe set, the binary listens on UDP only when {@code DD_DOGSTATSD_PORT} is set,
-     * because a binary without a pipe panics when another binary on the instance takes 8125.
-     * The .NET and Node compatibility layers don't need UDP: they point their in-process
-     * DogStatsD clients at the pipe through environment variables. Java can't, because a JVM
-     * can't change its own environment after it starts. A DogStatsD client that doesn't read
-     * the {@code dd.dogstatsd.pipe.name} system property, or can't open the pipe, still sends to
-     * UDP 8125, so this asks the binary to listen there. A port the customer already set wins.
+     * Passes the pipe names to the binary and asks it to keep UDP too. With a pipe, the binary
+     * listens on UDP only when {@code DD_DOGSTATSD_PORT} is set. A JVM can't change its own
+     * environment, so DogStatsD clients that don't read {@code dd.dogstatsd.pipe.name}, or can't
+     * open the pipe, still send to UDP 8125. A port the customer set wins.
      */
     static void addPipeSettings(Map<String, String> binaryEnvironment, NamedPipeNames pipeNames) {
         binaryEnvironment.put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
