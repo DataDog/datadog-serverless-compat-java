@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
  */
 final class TracerVersionGate {
     static final String TRACER_PREMAIN_CLASS = "datadog.trace.bootstrap.AgentPreCheck";
+    static final String COMPAT_PREMAIN_CLASS = ServerlessCompatAgent.class.getName();
 
     // Placeholder: the next unreleased dd-trace-java version on master. Replace it with the
     // first dd-trace-java release that includes the named-pipe transport and StatsD fixes.
@@ -26,10 +27,14 @@ final class TracerVersionGate {
 
     final boolean passed;
     final String reason;
+    // The JVM runs -javaagent premains in command-line order, so a tracer listed first reads its
+    // settings before this agent sets the pipe system properties.
+    final boolean tracerListedBeforeCompat;
 
-    private TracerVersionGate(boolean passed, String reason) {
+    private TracerVersionGate(boolean passed, String reason, boolean tracerListedBeforeCompat) {
         this.passed = passed;
         this.reason = reason;
+        this.tracerListedBeforeCompat = tracerListedBeforeCompat;
     }
 
     static TracerVersionGate check() {
@@ -37,7 +42,7 @@ final class TracerVersionGate {
         try {
             jvmArguments = ManagementFactory.getRuntimeMXBean().getInputArguments();
         } catch (Exception e) {
-            return new TracerVersionGate(false, "unable to read JVM arguments to find dd-java-agent: " + e);
+            return new TracerVersionGate(false, "unable to read JVM arguments to find dd-java-agent: " + e, false);
         }
         return check(jvmArguments);
     }
@@ -49,43 +54,54 @@ final class TracerVersionGate {
     static TracerVersionGate check(List<String> jvmArguments, String minimumVersion) {
         int[] minimum = parseVersion(minimumVersion);
         if (minimum == null) {
-            return new TracerVersionGate(false, "invalid minimum dd-java-agent version " + minimumVersion);
+            return new TracerVersionGate(false, "invalid minimum dd-java-agent version " + minimumVersion, false);
         }
 
+        String jarPath = null;
+        Manifest tracerManifest = null;
+        boolean tracerListedBeforeCompat = false;
         for (String argument : jvmArguments) {
             if (!argument.startsWith(JAVAAGENT_PREFIX)) {
                 continue;
             }
-            String jarPath = javaagentJarPath(argument);
-            Manifest manifest = readManifest(jarPath);
+            String agentJarPath = javaagentJarPath(argument);
+            Manifest manifest = readManifest(agentJarPath);
             if (manifest == null) {
                 continue;
             }
-            Attributes attributes = manifest.getMainAttributes();
-            if (!TRACER_PREMAIN_CLASS.equals(attributes.getValue("Premain-Class"))) {
-                continue;
+            String premainClass = manifest.getMainAttributes().getValue("Premain-Class");
+            if (COMPAT_PREMAIN_CLASS.equals(premainClass) && tracerManifest != null) {
+                tracerListedBeforeCompat = true;
+            } else if (TRACER_PREMAIN_CLASS.equals(premainClass) && tracerManifest == null) {
+                jarPath = agentJarPath;
+                tracerManifest = manifest;
             }
-
-            String version = attributes.getValue(Attributes.Name.IMPLEMENTATION_VERSION);
-            if (version == null || version.isEmpty()) {
-                return new TracerVersionGate(false,
-                        "dd-java-agent at " + jarPath + " has no Implementation-Version in its manifest");
-            }
-            int[] tracer = parseVersion(version);
-            if (tracer == null) {
-                return new TracerVersionGate(false,
-                        "unable to read dd-java-agent version '" + version + "' at " + jarPath);
-            }
-            if (compare(tracer, minimum) < 0) {
-                return new TracerVersionGate(false, "dd-java-agent " + version + " at " + jarPath
-                        + " is older than " + minimumVersion + ", the first version that supports named pipes");
-            }
-            return new TracerVersionGate(true, "dd-java-agent " + version + " at " + jarPath
-                    + " supports named pipes (minimum " + minimumVersion + ")");
         }
 
-        return new TracerVersionGate(false,
-                "no readable dd-java-agent found among -javaagent options (Premain-Class " + TRACER_PREMAIN_CLASS + ")");
+        if (tracerManifest == null) {
+            return new TracerVersionGate(false,
+                    "no readable dd-java-agent found among -javaagent options (Premain-Class " + TRACER_PREMAIN_CLASS + ")",
+                    false);
+        }
+
+        String version = tracerManifest.getMainAttributes().getValue(Attributes.Name.IMPLEMENTATION_VERSION);
+        if (version == null || version.isEmpty()) {
+            return new TracerVersionGate(false,
+                    "dd-java-agent at " + jarPath + " has no Implementation-Version in its manifest",
+                    tracerListedBeforeCompat);
+        }
+        int[] tracer = parseVersion(version);
+        if (tracer == null) {
+            return new TracerVersionGate(false,
+                    "unable to read dd-java-agent version '" + version + "' at " + jarPath, tracerListedBeforeCompat);
+        }
+        if (compare(tracer, minimum) < 0) {
+            return new TracerVersionGate(false, "dd-java-agent " + version + " at " + jarPath
+                    + " is older than " + minimumVersion + ", the first version that supports named pipes",
+                    tracerListedBeforeCompat);
+        }
+        return new TracerVersionGate(true, "dd-java-agent " + version + " at " + jarPath
+                + " supports named pipes (minimum " + minimumVersion + ")", tracerListedBeforeCompat);
     }
 
     // The JVM treats everything after the first '=' as agent options.

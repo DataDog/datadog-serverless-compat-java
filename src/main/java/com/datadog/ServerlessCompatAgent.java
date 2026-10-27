@@ -138,6 +138,12 @@ public class ServerlessCompatAgent {
             return pipeNames;
         }
         log.debug("Tracer named pipes are on: {}", gate.reason);
+        if (gate.tracerListedBeforeCompat) {
+            log.warn("dd-java-agent is listed before the Datadog Serverless Compatibility Layer in the JVM's "
+                    + "-javaagent options, so it may have read its settings before the named pipes were set and "
+                    + "keep sending traces and its own metrics over TCP and UDP. List the Compatibility Layer's "
+                    + "-javaagent option first.");
+        }
 
         systemProperties.setProperty(NamedPipeNames.TRACE_PIPE_NAME_PROPERTY, pipeNames.tracePipeName);
         systemProperties.setProperty(NamedPipeNames.DOGSTATSD_PIPE_NAME_PROPERTY, pipeNames.dogstatsdPipeName);
