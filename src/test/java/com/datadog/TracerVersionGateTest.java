@@ -106,6 +106,30 @@ class TracerVersionGateTest {
     }
 
     @Test
+    void check_detectsTracerListedBeforeCompat() throws IOException {
+        Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
+        Path tracer = writeTracerJar("1.68.0");
+
+        TracerVersionGate gate = TracerVersionGate.check(
+                Arrays.asList(javaagent(tracer), "-Xmx512m", javaagent(compat)), MINIMUM);
+
+        assertTrue(gate.passed, gate.reason);
+        assertTrue(gate.tracerListedBeforeCompat);
+    }
+
+    @Test
+    void check_acceptsCompatListedBeforeTracer() throws IOException {
+        Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
+        Path tracer = writeTracerJar("1.68.0");
+
+        TracerVersionGate gate = TracerVersionGate.check(
+                Arrays.asList(javaagent(compat), javaagent(tracer)), MINIMUM);
+
+        assertTrue(gate.passed, gate.reason);
+        assertFalse(gate.tracerListedBeforeCompat);
+    }
+
+    @Test
     void check_ignoresAgentOptions() throws IOException {
         Path tracer = writeTracerJar("1.68.0");
 
