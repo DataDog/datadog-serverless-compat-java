@@ -1,6 +1,7 @@
 package com.datadog;
 
 import java.lang.reflect.Method;
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,18 @@ import org.slf4j.helpers.NOPLogger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ServerlessCompatAgentTest {
+
+    @Test
+    void childReceivesWrapperAndEngineVersionsForCustomBinary() {
+        File executable = new File("/custom/compat");
+        ProcessBuilder child = ServerlessCompatAgent.createProcessBuilder(
+                executable, "0.25.0", CloudEnvironment.AZURE_FUNCTION);
+        assertEquals(executable.getAbsolutePath(), child.command().get(0));
+        assertEquals("0.25.0", child.environment().get("DD_SERVERLESS_COMPAT_VERSION"));
+        assertEquals(System.getProperty("java.version"), child.environment().get("JAVA_VERSION"));
+        assertEquals(System.getProperty("java.version"), child.environment().get("FUNCTIONS_WORKER_RUNTIME_VERSION"));
+        assertEquals(System.getenv("DD_SERVICE"), child.environment().get("DD_SERVICE"));
+    }
 
     @ParameterizedTest
     @CsvSource({
