@@ -169,7 +169,7 @@ public class ServerlessCompatAgent {
             String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
-            ProcessBuilder processBuilder = createProcessBuilder(executableFile, packageVersion, environment);
+            ProcessBuilder processBuilder = createProcessBuilder(executableFile, packageVersion);
             processBuilder.inheritIO();
             processBuilder.start();
         } catch (Exception e) {
@@ -177,13 +177,15 @@ public class ServerlessCompatAgent {
         }
     }
 
-    static ProcessBuilder createProcessBuilder(File executable, String packageVersion, CloudEnvironment environment) {
+    static ProcessBuilder createProcessBuilder(File executable, String packageVersion) {
         ProcessBuilder processBuilder = new ProcessBuilder(executable.getAbsolutePath());
         Map<String, String> childEnvironment = processBuilder.environment();
         childEnvironment.put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
-        childEnvironment.put("JAVA_VERSION", System.getProperty("java.version"));
-        if (environment == CloudEnvironment.AZURE_FUNCTION) {
-            childEnvironment.put("FUNCTIONS_WORKER_RUNTIME_VERSION", System.getProperty("java.version"));
+        String javaVersion = System.getProperty("java.version");
+        if (javaVersion != null && !javaVersion.trim().isEmpty()) {
+            childEnvironment.put("DD_SERVERLESS_COMPAT_RUNTIME", "java" + javaVersion.trim());
+        } else {
+            childEnvironment.remove("DD_SERVERLESS_COMPAT_RUNTIME");
         }
         return processBuilder;
     }

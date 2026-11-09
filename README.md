@@ -10,6 +10,11 @@ With `DD_SERVERLESS_COMPAT_METADATA_ENABLED=true`, inventory reports the wrapper
 `DD_SERVERLESS_COMPAT_PATH` selects a custom binary but does not change the wrapper package version.
 The binary must supply its own embedded version; an unversioned binary must not inherit the wrapper version.
 
+The wrapper passes a combined language and version hint (for example, `python3.13.7`)
+through `DD_SERVERLESS_COMPAT_RUNTIME`
+to the child binary without overwriting platform-owned version variables. This requires a
+binary that supports this contract; older binaries retain their platform-based runtime detection.
+
 # Getting Started
 
 - [Install Serverless Monitoring for Azure Functions](https://docs.datadoghq.com/serverless/azure_functions/?code-lang=java)

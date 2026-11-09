@@ -17,13 +17,38 @@ class ServerlessCompatAgentTest {
     @Test
     void childReceivesWrapperAndEngineVersionsForCustomBinary() {
         File executable = new File("/custom/compat");
+        String inheritedWorkerVersion = System.getenv("FUNCTIONS_WORKER_RUNTIME_VERSION");
         ProcessBuilder child = ServerlessCompatAgent.createProcessBuilder(
-                executable, "0.25.0", CloudEnvironment.AZURE_FUNCTION);
+                executable, "0.25.0");
         assertEquals(executable.getAbsolutePath(), child.command().get(0));
         assertEquals("0.25.0", child.environment().get("DD_SERVERLESS_COMPAT_VERSION"));
-        assertEquals(System.getProperty("java.version"), child.environment().get("JAVA_VERSION"));
-        assertEquals(System.getProperty("java.version"), child.environment().get("FUNCTIONS_WORKER_RUNTIME_VERSION"));
+        assertEquals("java" + System.getProperty("java.version"), child.environment().get("DD_SERVERLESS_COMPAT_RUNTIME"));
+        assertEquals(System.getenv("JAVA_VERSION"), child.environment().get("JAVA_VERSION"));
+        assertEquals(inheritedWorkerVersion, child.environment().get("FUNCTIONS_WORKER_RUNTIME_VERSION"));
+        assertEquals(inheritedWorkerVersion, System.getenv("FUNCTIONS_WORKER_RUNTIME_VERSION"));
         assertEquals(System.getenv("DD_SERVICE"), child.environment().get("DD_SERVICE"));
+    }
+
+    @Test
+    void missingJavaVersionDoesNotSupplyRuntimeHint() {
+        String originalVersion = System.getProperty("java.version");
+        try {
+            for (String version : new String[] {null, "", "   "}) {
+                if (version == null) {
+                    System.clearProperty("java.version");
+                } else {
+                    System.setProperty("java.version", version);
+                }
+                ProcessBuilder child = ServerlessCompatAgent.createProcessBuilder(new File("/custom/compat"), "0.25.0");
+                assertFalse(child.environment().containsKey("DD_SERVERLESS_COMPAT_RUNTIME"));
+            }
+        } finally {
+            if (originalVersion == null) {
+                System.clearProperty("java.version");
+            } else {
+                System.setProperty("java.version", originalVersion);
+            }
+        }
     }
 
     @ParameterizedTest
