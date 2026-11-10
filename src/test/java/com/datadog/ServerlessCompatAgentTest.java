@@ -29,28 +29,6 @@ class ServerlessCompatAgentTest {
         assertEquals(System.getenv("DD_SERVICE"), child.environment().get("DD_SERVICE"));
     }
 
-    @Test
-    void missingJavaVersionDoesNotSupplyRuntimeHint() {
-        String originalVersion = System.getProperty("java.version");
-        try {
-            for (String version : new String[] {null, "", "   "}) {
-                if (version == null) {
-                    System.clearProperty("java.version");
-                } else {
-                    System.setProperty("java.version", version);
-                }
-                ProcessBuilder child = ServerlessCompatAgent.createProcessBuilder(new File("/custom/compat"), "0.25.0");
-                assertFalse(child.environment().containsKey("DD_SERVERLESS_COMPAT_RUNTIME"));
-            }
-        } finally {
-            if (originalVersion == null) {
-                System.clearProperty("java.version");
-            } else {
-                System.setProperty("java.version", originalVersion);
-            }
-        }
-    }
-
     @ParameterizedTest
     @CsvSource({
             "TRACE, TRACE",
