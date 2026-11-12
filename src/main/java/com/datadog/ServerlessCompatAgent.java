@@ -169,12 +169,24 @@ public class ServerlessCompatAgent {
             String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
-            ProcessBuilder processBuilder = new ProcessBuilder(executableFile.getAbsolutePath());
-            processBuilder.environment().put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
+            ProcessBuilder processBuilder = createProcessBuilder(executableFile, packageVersion);
             processBuilder.inheritIO();
             processBuilder.start();
         } catch (Exception e) {
             log.error("Exception when starting {}", fileName, e);
         }
+    }
+
+    static ProcessBuilder createProcessBuilder(File executable, String packageVersion) {
+        ProcessBuilder processBuilder = new ProcessBuilder(executable.getAbsolutePath());
+        Map<String, String> childEnvironment = processBuilder.environment();
+        childEnvironment.put("DD_SERVERLESS_COMPAT_VERSION", packageVersion);
+        String javaVersion = System.getProperty("java.version");
+        if (javaVersion != null && !javaVersion.trim().isEmpty()) {
+            childEnvironment.put("DD_SERVERLESS_COMPAT_RUNTIME", "java" + javaVersion.trim());
+        } else {
+            childEnvironment.remove("DD_SERVERLESS_COMPAT_RUNTIME");
+        }
+        return processBuilder;
     }
 }

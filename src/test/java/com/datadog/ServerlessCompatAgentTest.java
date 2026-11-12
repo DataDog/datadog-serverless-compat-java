@@ -1,6 +1,7 @@
 package com.datadog;
 
 import java.lang.reflect.Method;
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,21 @@ import org.slf4j.helpers.NOPLogger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ServerlessCompatAgentTest {
+
+    @Test
+    void childReceivesWrapperAndEngineVersionsForCustomBinary() {
+        File executable = new File("/custom/compat");
+        String inheritedWorkerVersion = System.getenv("FUNCTIONS_WORKER_RUNTIME_VERSION");
+        ProcessBuilder child = ServerlessCompatAgent.createProcessBuilder(
+                executable, "0.25.0");
+        assertEquals(executable.getAbsolutePath(), child.command().get(0));
+        assertEquals("0.25.0", child.environment().get("DD_SERVERLESS_COMPAT_VERSION"));
+        assertEquals("java" + System.getProperty("java.version"), child.environment().get("DD_SERVERLESS_COMPAT_RUNTIME"));
+        assertEquals(System.getenv("JAVA_VERSION"), child.environment().get("JAVA_VERSION"));
+        assertEquals(inheritedWorkerVersion, child.environment().get("FUNCTIONS_WORKER_RUNTIME_VERSION"));
+        assertEquals(inheritedWorkerVersion, System.getenv("FUNCTIONS_WORKER_RUNTIME_VERSION"));
+        assertEquals(System.getenv("DD_SERVICE"), child.environment().get("DD_SERVICE"));
+    }
 
     @ParameterizedTest
     @CsvSource({
