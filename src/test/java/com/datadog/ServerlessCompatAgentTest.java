@@ -2,7 +2,6 @@ package com.datadog;
 
 import java.lang.reflect.Method;
 import java.io.File;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -54,18 +53,34 @@ class ServerlessCompatAgentTest {
         }
     }
 
-    private static NamedPipeNames pipeNames() {
+    private static Map<String, String> windowsPipeNameEnv() {
         Map<String, String> env = new HashMap<>();
         env.put("DD_APM_WINDOWS_PIPE_NAME", "trace_pipe");
         env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_pipe");
-        return NamedPipeNames.choose(env, new Properties());
+        return env;
+    }
+
+    private static NamedPipeNames pipeNames() {
+        return NamedPipeNames.choose(windowsPipeNameEnv(), new Properties());
+    }
+
+    @Test
+    void configureNamedPipes_passedGateGivesPipesToTracer() {
+        TracerVersionGate gate = new TracerVersionGate(true, "test tracer supports pipes", false);
+        Properties systemProperties = new Properties();
+
+        NamedPipeNames pipeNames = ServerlessCompatAgent.configureNamedPipes(gate, windowsPipeNameEnv(),
+                systemProperties);
+
+        assertEquals("trace_pipe", pipeNames.tracePipeName);
+        assertEquals("dogstatsd_pipe", pipeNames.dogstatsdPipeName);
+        assertEquals("trace_pipe", systemProperties.getProperty("dd.trace.pipe.name"));
+        assertEquals("dogstatsd_pipe", systemProperties.getProperty("dd.dogstatsd.pipe.name"));
     }
 
     @Test
     void configureNamedPipes_failedGateGivesPipesToBinaryOnly() {
-        // No -javaagent options, so the gate fails because dd-java-agent is missing.
-        TracerVersionGate gate = TracerVersionGate.check(Collections.emptyList());
-        assertFalse(gate.passed);
+        TracerVersionGate gate = TracerVersionGate.failed("test tracer is too old");
         Properties systemProperties = new Properties();
 
         NamedPipeNames pipeNames = ServerlessCompatAgent.configureNamedPipes(gate, new HashMap<>(),

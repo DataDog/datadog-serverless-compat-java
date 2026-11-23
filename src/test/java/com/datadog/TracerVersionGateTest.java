@@ -17,7 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TracerVersionGateTest {
-    private static final String MINIMUM = "1.69.0";
+    private static final String COMPAT_PREMAIN_CLASS = "com.datadog.ServerlessCompatAgent";
     private static final String TRACER_PREMAIN_CLASS = "datadog.trace.bootstrap.AgentPreCheck";
 
     @TempDir
@@ -56,7 +56,7 @@ class TracerVersionGateTest {
         Path tracer = writeTracerJar(version);
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Collections.singletonList(javaagent(tracer)), MINIMUM);
+                Collections.singletonList(javaagent(tracer)));
 
         assertTrue(gate.passed, gate.reason);
     }
@@ -67,11 +67,11 @@ class TracerVersionGateTest {
         Path tracer = writeTracerJar(version);
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Collections.singletonList(javaagent(tracer)), MINIMUM);
+                Collections.singletonList(javaagent(tracer)));
 
         assertFalse(gate.passed);
         assertTrue(gate.reason.contains(version), gate.reason);
-        assertTrue(gate.reason.contains(MINIMUM), gate.reason);
+        assertTrue(gate.reason.contains(TracerVersionGate.MINIMUM_TRACER_VERSION), gate.reason);
     }
 
     @ParameterizedTest
@@ -80,38 +80,29 @@ class TracerVersionGateTest {
         Path tracer = writeTracerJar(version);
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Collections.singletonList(javaagent(tracer)), MINIMUM);
-
-        assertTrue(gate.passed, gate.reason);
-    }
-
-    @Test
-    void check_usesDefaultMinimumVersion() throws IOException {
-        Path tracer = writeTracerJar(TracerVersionGate.MINIMUM_TRACER_VERSION);
-
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(tracer)));
+                Collections.singletonList(javaagent(tracer)));
 
         assertTrue(gate.passed, gate.reason);
     }
 
     @Test
     void check_findsTracerByPremainClassNotFileName() throws IOException {
-        Path compat = writeAgentJar("dd-java-agent-lookalike.jar", "com.datadog.ServerlessCompatAgent", "9.9.9");
+        Path compat = writeAgentJar("dd-java-agent-lookalike.jar", COMPAT_PREMAIN_CLASS, "9.9.9");
         Path tracer = writeAgentJar("renamed-tracer.jar", TRACER_PREMAIN_CLASS, "1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Arrays.asList("-Xmx512m", javaagent(compat), javaagent(tracer)), MINIMUM);
+                Arrays.asList("-Xmx512m", javaagent(compat), javaagent(tracer)));
 
         assertTrue(gate.passed, gate.reason);
     }
 
     @Test
     void check_detectsTracerListedBeforeCompat() throws IOException {
-        Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
+        Path compat = writeAgentJar("compat.jar", COMPAT_PREMAIN_CLASS, "1.0.0");
         Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Arrays.asList(javaagent(tracer), "-Xmx512m", javaagent(compat)), MINIMUM);
+                Arrays.asList(javaagent(tracer), "-Xmx512m", javaagent(compat)));
 
         assertTrue(gate.passed, gate.reason);
         assertTrue(gate.tracerListedBeforeCompat);
@@ -119,11 +110,11 @@ class TracerVersionGateTest {
 
     @Test
     void check_acceptsCompatListedBeforeTracer() throws IOException {
-        Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
+        Path compat = writeAgentJar("compat.jar", COMPAT_PREMAIN_CLASS, "1.0.0");
         Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Arrays.asList(javaagent(compat), javaagent(tracer)), MINIMUM);
+                Arrays.asList(javaagent(compat), javaagent(tracer)));
 
         assertTrue(gate.passed, gate.reason);
         assertFalse(gate.tracerListedBeforeCompat);
@@ -134,24 +125,24 @@ class TracerVersionGateTest {
         Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
-                Collections.singletonList(javaagent(tracer) + "=some=option"), MINIMUM);
+                Collections.singletonList(javaagent(tracer) + "=some=option"));
 
         assertTrue(gate.passed, gate.reason);
     }
 
     @Test
     void check_failsWhenNoJavaagentIsPresent() {
-        TracerVersionGate gate = TracerVersionGate.check(Arrays.asList("-Xmx512m", "-Dfoo=bar"), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Arrays.asList("-Xmx512m", "-Dfoo=bar"));
 
         assertFalse(gate.passed);
         assertTrue(gate.reason.contains("dd-java-agent"), gate.reason);
     }
 
     @Test
-    void check_failsWhenOnlyOtherAgentsArePresent() throws IOException {
-        Path compat = writeAgentJar("dd-java-agent.jar", "com.datadog.ServerlessCompatAgent", "1.69.0");
+    void check_failsWhenOnlyCompatAgentIsPresent() throws IOException {
+        Path compat = writeAgentJar("dd-java-agent.jar", COMPAT_PREMAIN_CLASS, "1.69.0");
 
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(compat)), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(compat)));
 
         assertFalse(gate.passed);
     }
@@ -160,7 +151,7 @@ class TracerVersionGateTest {
     void check_failsWhenTracerJarDoesNotExist() {
         Path missing = tempDir.resolve("dd-java-agent.jar");
 
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(missing)), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(missing)));
 
         assertFalse(gate.passed);
     }
@@ -170,7 +161,7 @@ class TracerVersionGateTest {
         Path notAJar = tempDir.resolve("dd-java-agent.jar");
         Files.write(notAJar, "not a jar".getBytes("UTF-8"));
 
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(notAJar)), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(notAJar)));
 
         assertFalse(gate.passed);
     }
@@ -179,7 +170,7 @@ class TracerVersionGateTest {
     void check_failsWhenTracerVersionIsMissing() throws IOException {
         Path tracer = writeTracerJar(null);
 
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(tracer)), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(tracer)));
 
         assertFalse(gate.passed);
         assertTrue(gate.reason.contains("Implementation-Version"), gate.reason);
@@ -190,7 +181,7 @@ class TracerVersionGateTest {
     void check_failsWhenTracerVersionIsUnreadable(String version) throws IOException {
         Path tracer = writeTracerJar(version);
 
-        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(tracer)), MINIMUM);
+        TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(tracer)));
 
         assertFalse(gate.passed);
     }

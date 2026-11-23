@@ -31,21 +31,6 @@ class NamedPipeNamesTest {
     }
 
     @Test
-    void choose_windowsPipeNamesWinOverCustomerSetNames() {
-        Map<String, String> env = new HashMap<>();
-        env.put("DD_APM_WINDOWS_PIPE_NAME", "apm_windows");
-        env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_windows");
-        env.put("DD_TRACE_PIPE_NAME", "trace_env");
-        Properties systemProperties = new Properties();
-        systemProperties.setProperty("dd.dogstatsd.pipe.name", "dogstatsd_property");
-
-        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties);
-
-        assertEquals("apm_windows", names.tracePipeName);
-        assertEquals("dogstatsd_windows", names.dogstatsdPipeName);
-    }
-
-    @Test
     void choose_usesCustomerSetEnvironmentVariables() {
         Map<String, String> env = new HashMap<>();
         env.put("DD_TRACE_PIPE_NAME", "trace_env");
@@ -118,7 +103,7 @@ class NamedPipeNamesTest {
     }
 
     @Test
-    void choose_warnsWhenCustomerSetNamesDifferFromWindowsPipeNames() {
+    void choose_windowsPipeNamesWinOverDifferentCustomerSetNamesWithWarnings() {
         Map<String, String> env = new HashMap<>();
         env.put("DD_APM_WINDOWS_PIPE_NAME", "apm_windows");
         env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_windows");
@@ -128,6 +113,8 @@ class NamedPipeNamesTest {
 
         NamedPipeNames names = NamedPipeNames.choose(env, systemProperties);
 
+        assertEquals("apm_windows", names.tracePipeName);
+        assertEquals("dogstatsd_windows", names.dogstatsdPipeName);
         assertEquals(2, names.warnings.size(), names.warnings.toString());
         assertTrue(names.warnings.get(0).contains("DD_TRACE_PIPE_NAME"), names.warnings.get(0));
         assertTrue(names.warnings.get(0).contains("DD_APM_WINDOWS_PIPE_NAME"), names.warnings.get(0));

@@ -110,13 +110,11 @@ public class ServerlessCompatAgent {
     }
 
     /**
-     * Chooses this function's named pipes. The binary always gets them, so it warns instead of
-     * panicking when another binary on the instance owns a port.
+     * Chooses this function's named pipes. Always gives the binary its own pipes, so binaries on a
+     * shared instance don't fight over one port.
      *
-     * <p>dd-java-agent gets them, as system properties, only when the gate says it can use pipes;
-     * the properties must be set before its premain runs. Otherwise the tracer keeps what it
-     * inherited. It learns a pipe name only from its own configuration, so the binary's pipes
-     * can't reach an older tracer.
+     * <p>Sets dd-java-agent's pipe system properties only when the gate passes, and before the
+     * tracer's premain runs. An older tracer never sees the generated names.
      *
      * @return the chosen pipe names for the binary
      */
@@ -132,12 +130,12 @@ public class ServerlessCompatAgent {
         }
 
         if (!gate.passed) {
-            log.info("Tracer named pipes are off, so dd-java-agent keeps its inherited trace and DogStatsD "
-                    + "settings: {}. The binary still listens on pipes {} and {}, TCP, and UDP.",
+            log.info("Not giving dd-java-agent named pipes because {}. It keeps its own trace and DogStatsD "
+                    + "settings. The binary listens on pipes {} and {} as well as TCP and UDP.",
                     gate.reason, pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
             return pipeNames;
         }
-        log.debug("Tracer named pipes are on: {}", gate.reason);
+        log.debug("Giving dd-java-agent named pipes because {}", gate.reason);
         if (gate.tracerListedBeforeCompat) {
             log.warn("dd-java-agent is listed before the Datadog Serverless Compatibility Layer in the JVM's "
                     + "-javaagent options, so it may have read its settings before the named pipes were set and "
@@ -145,8 +143,8 @@ public class ServerlessCompatAgent {
                     + "-javaagent option first.");
         }
 
-        systemProperties.setProperty(NamedPipeNames.TRACE_PIPE_NAME_PROPERTY, pipeNames.tracePipeName);
-        systemProperties.setProperty(NamedPipeNames.DOGSTATSD_PIPE_NAME_PROPERTY, pipeNames.dogstatsdPipeName);
+        systemProperties.setProperty(NamedPipe.TRACE.tracerProperty, pipeNames.tracePipeName);
+        systemProperties.setProperty(NamedPipe.DOGSTATSD.tracerProperty, pipeNames.dogstatsdPipeName);
         log.info("Configured named pipes - Trace: {}, DogStatsD: {}",
                 pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
         return pipeNames;
@@ -159,8 +157,8 @@ public class ServerlessCompatAgent {
      * open the pipe, still send to UDP 8125. A port the customer set wins.
      */
     static void addPipeSettings(Map<String, String> binaryEnvironment, NamedPipeNames pipeNames) {
-        binaryEnvironment.put(NamedPipeNames.TRACE_WINDOWS_PIPE_NAME_ENV, pipeNames.tracePipeName);
-        binaryEnvironment.put(NamedPipeNames.DOGSTATSD_WINDOWS_PIPE_NAME_ENV, pipeNames.dogstatsdPipeName);
+        binaryEnvironment.put(NamedPipe.TRACE.windowsPipeNameEnv, pipeNames.tracePipeName);
+        binaryEnvironment.put(NamedPipe.DOGSTATSD.windowsPipeNameEnv, pipeNames.dogstatsdPipeName);
         binaryEnvironment.putIfAbsent(DOGSTATSD_PORT_ENV, DEFAULT_DOGSTATSD_PORT);
     }
 
@@ -227,14 +225,9 @@ public class ServerlessCompatAgent {
             String packageVersion = getPackageVersion();
             log.debug("Found package version {}", packageVersion);
 
-            NamedPipeNames pipeNames = null;
-            if (environment == CloudEnvironment.AZURE_FUNCTION && isWindows()) {
-                pipeNames = configureNamedPipes();
-            }
-
             ProcessBuilder processBuilder = createProcessBuilder(executableFile, packageVersion);
-            if (pipeNames != null) {
-                addPipeSettings(processBuilder.environment(), pipeNames);
+            if (environment == CloudEnvironment.AZURE_FUNCTION && isWindows()) {
+                addPipeSettings(processBuilder.environment(), configureNamedPipes());
             }
             processBuilder.inheritIO();
             processBuilder.start();
