@@ -17,7 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TracerVersionGateTest {
-    private static final String MINIMUM = "1.68.0";
+    private static final String MINIMUM = "1.69.0";
     private static final String TRACER_PREMAIN_CLASS = "datadog.trace.bootstrap.AgentPreCheck";
 
     @TempDir
@@ -51,7 +51,7 @@ class TracerVersionGateTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"1.68.0", "1.68.1", "1.69.0", "1.100.0", "2.0.0"})
+    @ValueSource(strings = {"1.69.0", "1.69.1", "1.70.0", "1.100.0", "2.0.0"})
     void check_passesForMinimumVersionOrLater(String version) throws IOException {
         Path tracer = writeTracerJar(version);
 
@@ -62,7 +62,7 @@ class TracerVersionGateTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"1.67.1", "1.67.0", "1.9.9", "0.99.0", "1.67.0-SNAPSHOT"})
+    @ValueSource(strings = {"1.68.2", "1.68.0", "1.9.9", "0.99.0", "1.68.0-SNAPSHOT"})
     void check_failsForOlderVersions(String version) throws IOException {
         Path tracer = writeTracerJar(version);
 
@@ -75,7 +75,7 @@ class TracerVersionGateTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"1.68.0-SNAPSHOT", "1.68.0-105-gefa6bd64", "1.68.0-SNAPSHOT-DIRTY"})
+    @ValueSource(strings = {"1.69.0-SNAPSHOT", "1.69.0-105-gefa6bd64", "1.69.0-SNAPSHOT-DIRTY"})
     void check_passesForDevBuildsOfMinimumVersion(String version) throws IOException {
         Path tracer = writeTracerJar(version);
 
@@ -97,7 +97,7 @@ class TracerVersionGateTest {
     @Test
     void check_findsTracerByPremainClassNotFileName() throws IOException {
         Path compat = writeAgentJar("dd-java-agent-lookalike.jar", "com.datadog.ServerlessCompatAgent", "9.9.9");
-        Path tracer = writeAgentJar("renamed-tracer.jar", TRACER_PREMAIN_CLASS, "1.68.0");
+        Path tracer = writeAgentJar("renamed-tracer.jar", TRACER_PREMAIN_CLASS, "1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
                 Arrays.asList("-Xmx512m", javaagent(compat), javaagent(tracer)), MINIMUM);
@@ -108,7 +108,7 @@ class TracerVersionGateTest {
     @Test
     void check_detectsTracerListedBeforeCompat() throws IOException {
         Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
-        Path tracer = writeTracerJar("1.68.0");
+        Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
                 Arrays.asList(javaagent(tracer), "-Xmx512m", javaagent(compat)), MINIMUM);
@@ -120,7 +120,7 @@ class TracerVersionGateTest {
     @Test
     void check_acceptsCompatListedBeforeTracer() throws IOException {
         Path compat = writeAgentJar("compat.jar", TracerVersionGate.COMPAT_PREMAIN_CLASS, "1.0.0");
-        Path tracer = writeTracerJar("1.68.0");
+        Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
                 Arrays.asList(javaagent(compat), javaagent(tracer)), MINIMUM);
@@ -131,7 +131,7 @@ class TracerVersionGateTest {
 
     @Test
     void check_ignoresAgentOptions() throws IOException {
-        Path tracer = writeTracerJar("1.68.0");
+        Path tracer = writeTracerJar("1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(
                 Collections.singletonList(javaagent(tracer) + "=some=option"), MINIMUM);
@@ -149,7 +149,7 @@ class TracerVersionGateTest {
 
     @Test
     void check_failsWhenOnlyOtherAgentsArePresent() throws IOException {
-        Path compat = writeAgentJar("dd-java-agent.jar", "com.datadog.ServerlessCompatAgent", "1.68.0");
+        Path compat = writeAgentJar("dd-java-agent.jar", "com.datadog.ServerlessCompatAgent", "1.69.0");
 
         TracerVersionGate gate = TracerVersionGate.check(Collections.singletonList(javaagent(compat)), MINIMUM);
 
@@ -186,7 +186,7 @@ class TracerVersionGateTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"unknown", "1.68", "v1.68.0", ""})
+    @ValueSource(strings = {"unknown", "1.69", "v1.69.0", ""})
     void check_failsWhenTracerVersionIsUnreadable(String version) throws IOException {
         Path tracer = writeTracerJar(version);
 

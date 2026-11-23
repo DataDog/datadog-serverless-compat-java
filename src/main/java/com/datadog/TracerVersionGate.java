@@ -20,7 +20,7 @@ final class TracerVersionGate {
 
     // Placeholder: the next unreleased dd-trace-java version on master. Replace it with the
     // first dd-trace-java release that includes the named-pipe transport and StatsD fixes.
-    static final String MINIMUM_TRACER_VERSION = "1.68.0";
+    static final String MINIMUM_TRACER_VERSION = "1.69.0";
 
     private static final String JAVAAGENT_PREFIX = "-javaagent:";
     private static final Pattern VERSION_PATTERN = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(\\D.*)?$");
@@ -119,7 +119,7 @@ final class TracerVersionGate {
         }
     }
 
-    // Reads major.minor.patch and ignores any suffix, so 1.68.0-SNAPSHOT counts as 1.68.0.
+    // Reads major.minor.patch and ignores any suffix, so 1.69.0-SNAPSHOT counts as 1.69.0.
     private static int[] parseVersion(String version) {
         Matcher matcher = VERSION_PATTERN.matcher(version);
         if (!matcher.matches()) {
