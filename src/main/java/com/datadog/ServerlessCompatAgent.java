@@ -127,8 +127,8 @@ public class ServerlessCompatAgent {
         NamedPipeNames pipeNames = NamedPipeNames.choose(env, systemProperties, gate.passed);
 
         if (!gate.passed) {
-            log.info("Not giving dd-java-agent named pipes because {}. It keeps its own trace and DogStatsD "
-                    + "settings. The binary listens on pipes {} and {} as well as TCP and UDP.",
+            log.info("Not giving dd-java-agent named pipes because {}. The binary listens on pipes {} and {}, "
+                    + "and also tries the usual TCP and UDP ports.",
                     gate.reason, pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
             logWarnings(pipeNames);
             return pipeNames;
