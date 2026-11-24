@@ -29,9 +29,9 @@ enum NamedPipe {
 }
 
 /**
- * Chooses the trace and DogStatsD pipe names for one function, following the .NET
- * compatibility layer: the binary's *_WINDOWS_PIPE_NAME setting, then a name the customer
- * already set for the tracer, then a generated per-function name.
+ * Chooses the trace and DogStatsD pipe names for one function: the binary's
+ * *_WINDOWS_PIPE_NAME setting, then a name the customer already set for the tracer, then a
+ * generated per-function name.
  */
 final class NamedPipeNames {
     static final int MAX_PIPE_NAME_LENGTH = 256;
@@ -46,15 +46,20 @@ final class NamedPipeNames {
         this.warnings = Collections.unmodifiableList(warnings);
     }
 
-    static NamedPipeNames choose(Map<String, String> env, Properties systemProperties) {
+    /**
+     * @param tracerGetsPipes whether dd-java-agent will be given the chosen names, which only
+     *     changes the wording of the warnings
+     */
+    static NamedPipeNames choose(Map<String, String> env, Properties systemProperties, boolean tracerGetsPipes) {
         List<String> warnings = new ArrayList<>();
-        String tracePipeName = choosePipeName(NamedPipe.TRACE, env, systemProperties, warnings);
-        String dogstatsdPipeName = choosePipeName(NamedPipe.DOGSTATSD, env, systemProperties, warnings);
+        String tracePipeName = choosePipeName(NamedPipe.TRACE, env, systemProperties, tracerGetsPipes, warnings);
+        String dogstatsdPipeName =
+                choosePipeName(NamedPipe.DOGSTATSD, env, systemProperties, tracerGetsPipes, warnings);
         return new NamedPipeNames(tracePipeName, dogstatsdPipeName, warnings);
     }
 
     private static String choosePipeName(NamedPipe pipe, Map<String, String> env, Properties systemProperties,
-            List<String> warnings) {
+            boolean tracerGetsPipes, List<String> warnings) {
         // The tracer reads system properties before environment variables, so a JVM option
         // the customer passed is the customer-set name when both are present.
         String customerSetName = nonEmpty(systemProperties.getProperty(pipe.tracerProperty));
@@ -65,22 +70,35 @@ final class NamedPipeNames {
         }
 
         String windowsPipeName = nonEmpty(env.get(pipe.windowsPipeNameEnv));
-        if (windowsPipeName != null) {
-            if (customerSetName != null && !customerSetName.equals(windowsPipeName)) {
-                warnings.add(String.format("%s ('%s') differs from %s ('%s'). The binary uses %s.",
-                        customerSetSource, customerSetName, pipe.windowsPipeNameEnv, windowsPipeName,
-                        pipe.windowsPipeNameEnv));
-            }
-            warnIfTooLong(pipe.windowsPipeNameEnv, windowsPipeName, warnings);
-            return windowsPipeName;
+
+        // The binary's *_WINDOWS_PIPE_NAME setting wins over the customer-set tracer name, so
+        // warn when the customer set two different names. When dd-java-agent gets the chosen
+        // name, its own setting is replaced. Otherwise it keeps its own setting, and the two
+        // sides use different pipes.
+        if (windowsPipeName != null && customerSetName != null && !customerSetName.equals(windowsPipeName)) {
+            String outcome = tracerGetsPipes
+                    ? String.format("Both the binary and dd-java-agent use %s.", pipe.windowsPipeNameEnv)
+                    : String.format("The binary uses %s, and dd-java-agent keeps %s.", pipe.windowsPipeNameEnv,
+                            customerSetSource);
+            warnings.add(String.format("%s ('%s') differs from %s ('%s'). %s", customerSetSource,
+                    customerSetName, pipe.windowsPipeNameEnv, windowsPipeName, outcome));
         }
 
-        if (customerSetName != null) {
-            warnIfTooLong(customerSetSource, customerSetName, warnings);
-            return customerSetName;
+        // Use the first name that is set: the binary's setting, then the customer-set tracer name.
+        String pipeName = windowsPipeName;
+        String source = pipe.windowsPipeNameEnv;
+        if (pipeName == null) {
+            pipeName = customerSetName;
+            source = customerSetSource;
         }
 
-        return pipe.generatedPrefix + UUID.randomUUID().toString().replace("-", "");
+        // With neither set, generate a name that is unique to this function. Generated names
+        // are always short enough, so only a name the customer set needs the length check.
+        if (pipeName == null) {
+            return pipe.generatedPrefix + UUID.randomUUID().toString().replace("-", "");
+        }
+        warnIfTooLong(source, pipeName, warnings);
+        return pipeName;
     }
 
     private static void warnIfTooLong(String source, String pipeName, List<String> warnings) {

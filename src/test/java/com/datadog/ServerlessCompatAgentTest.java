@@ -61,7 +61,7 @@ class ServerlessCompatAgentTest {
     }
 
     private static NamedPipeNames pipeNames() {
-        return NamedPipeNames.choose(windowsPipeNameEnv(), new Properties());
+        return NamedPipeNames.choose(windowsPipeNameEnv(), new Properties(), true);
     }
 
     @Test

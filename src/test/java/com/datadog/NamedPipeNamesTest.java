@@ -23,7 +23,7 @@ class NamedPipeNamesTest {
         env.put("DD_APM_WINDOWS_PIPE_NAME", "apm_windows");
         env.put("DD_DOGSTATSD_WINDOWS_PIPE_NAME", "dogstatsd_windows");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), true);
 
         assertEquals("apm_windows", names.tracePipeName);
         assertEquals("dogstatsd_windows", names.dogstatsdPipeName);
@@ -36,7 +36,7 @@ class NamedPipeNamesTest {
         env.put("DD_TRACE_PIPE_NAME", "trace_env");
         env.put("DD_DOGSTATSD_PIPE_NAME", "dogstatsd_env");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), true);
 
         assertEquals("trace_env", names.tracePipeName);
         assertEquals("dogstatsd_env", names.dogstatsdPipeName);
@@ -49,7 +49,7 @@ class NamedPipeNamesTest {
         systemProperties.setProperty("dd.trace.pipe.name", "trace_property");
         systemProperties.setProperty("dd.dogstatsd.pipe.name", "dogstatsd_property");
 
-        NamedPipeNames names = NamedPipeNames.choose(new HashMap<>(), systemProperties);
+        NamedPipeNames names = NamedPipeNames.choose(new HashMap<>(), systemProperties, true);
 
         assertEquals("trace_property", names.tracePipeName);
         assertEquals("dogstatsd_property", names.dogstatsdPipeName);
@@ -65,7 +65,7 @@ class NamedPipeNamesTest {
         systemProperties.setProperty("dd.trace.pipe.name", "trace_property");
         systemProperties.setProperty("dd.dogstatsd.pipe.name", "dogstatsd_property");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties);
+        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties, true);
 
         assertEquals("trace_property", names.tracePipeName);
         assertEquals("dogstatsd_property", names.dogstatsdPipeName);
@@ -73,7 +73,7 @@ class NamedPipeNamesTest {
 
     @Test
     void choose_generatesNamesWhenNoneAreSet() {
-        NamedPipeNames names = NamedPipeNames.choose(new HashMap<>(), new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(new HashMap<>(), new Properties(), true);
 
         assertTrue(names.tracePipeName.matches("dd_trace_[0-9a-f]{32}"), names.tracePipeName);
         assertTrue(names.dogstatsdPipeName.matches("dd_dogstatsd_[0-9a-f]{32}"), names.dogstatsdPipeName);
@@ -82,8 +82,8 @@ class NamedPipeNamesTest {
 
     @Test
     void choose_generatesDifferentNamesEachTime() {
-        NamedPipeNames first = NamedPipeNames.choose(new HashMap<>(), new Properties());
-        NamedPipeNames second = NamedPipeNames.choose(new HashMap<>(), new Properties());
+        NamedPipeNames first = NamedPipeNames.choose(new HashMap<>(), new Properties(), true);
+        NamedPipeNames second = NamedPipeNames.choose(new HashMap<>(), new Properties(), true);
 
         assertNotEquals(first.tracePipeName, second.tracePipeName);
         assertNotEquals(first.dogstatsdPipeName, second.dogstatsdPipeName);
@@ -96,7 +96,7 @@ class NamedPipeNamesTest {
         env.put("DD_TRACE_PIPE_NAME", "trace_env");
         env.put("DD_DOGSTATSD_PIPE_NAME", "");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), true);
 
         assertEquals("trace_env", names.tracePipeName);
         assertTrue(names.dogstatsdPipeName.matches("dd_dogstatsd_[0-9a-f]{32}"), names.dogstatsdPipeName);
@@ -111,7 +111,7 @@ class NamedPipeNamesTest {
         Properties systemProperties = new Properties();
         systemProperties.setProperty("dd.dogstatsd.pipe.name", "dogstatsd_property");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties);
+        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties, true);
 
         assertEquals("apm_windows", names.tracePipeName);
         assertEquals("dogstatsd_windows", names.dogstatsdPipeName);
@@ -120,6 +120,19 @@ class NamedPipeNamesTest {
         assertTrue(names.warnings.get(0).contains("DD_APM_WINDOWS_PIPE_NAME"), names.warnings.get(0));
         assertTrue(names.warnings.get(1).contains("dd.dogstatsd.pipe.name"), names.warnings.get(1));
         assertTrue(names.warnings.get(1).contains("DD_DOGSTATSD_WINDOWS_PIPE_NAME"), names.warnings.get(1));
+        assertTrue(names.warnings.get(0).contains("Both the binary and dd-java-agent"), names.warnings.get(0));
+    }
+
+    @Test
+    void choose_differentNamesWarningSaysTracerKeepsItsOwnWhenItGetsNoPipes() {
+        Map<String, String> env = new HashMap<>();
+        env.put("DD_APM_WINDOWS_PIPE_NAME", "apm_windows");
+        env.put("DD_TRACE_PIPE_NAME", "trace_env");
+
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), false);
+
+        assertEquals(1, names.warnings.size(), names.warnings.toString());
+        assertTrue(names.warnings.get(0).contains("dd-java-agent keeps DD_TRACE_PIPE_NAME"), names.warnings.get(0));
     }
 
     @Test
@@ -130,7 +143,7 @@ class NamedPipeNamesTest {
         env.put("DD_TRACE_PIPE_NAME", "apm_windows");
         env.put("DD_DOGSTATSD_PIPE_NAME", "dogstatsd_windows");
 
-        NamedPipeNames names = NamedPipeNames.choose(env, new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), true);
 
         assertTrue(names.warnings.isEmpty(), names.warnings.toString());
     }
@@ -142,7 +155,7 @@ class NamedPipeNamesTest {
         Properties systemProperties = new Properties();
         systemProperties.setProperty("dd.dogstatsd.pipe.name", repeat('b', 300));
 
-        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties);
+        NamedPipeNames names = NamedPipeNames.choose(env, systemProperties, true);
 
         assertEquals(2, names.warnings.size(), names.warnings.toString());
         assertTrue(names.warnings.get(0).contains("DD_APM_WINDOWS_PIPE_NAME"), names.warnings.get(0));
@@ -156,7 +169,7 @@ class NamedPipeNamesTest {
         Map<String, String> env = new HashMap<>();
         env.put("DD_TRACE_PIPE_NAME", repeat('a', 256));
 
-        NamedPipeNames names = NamedPipeNames.choose(env, new Properties());
+        NamedPipeNames names = NamedPipeNames.choose(env, new Properties(), true);
 
         assertTrue(names.warnings.isEmpty(), names.warnings.toString());
     }

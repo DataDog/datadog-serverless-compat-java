@@ -124,15 +124,13 @@ public class ServerlessCompatAgent {
 
     static NamedPipeNames configureNamedPipes(TracerVersionGate gate, Map<String, String> env,
             Properties systemProperties) {
-        NamedPipeNames pipeNames = NamedPipeNames.choose(env, systemProperties);
-        for (String warning : pipeNames.warnings) {
-            log.warn(warning);
-        }
+        NamedPipeNames pipeNames = NamedPipeNames.choose(env, systemProperties, gate.passed);
 
         if (!gate.passed) {
             log.info("Not giving dd-java-agent named pipes because {}. It keeps its own trace and DogStatsD "
                     + "settings. The binary listens on pipes {} and {} as well as TCP and UDP.",
                     gate.reason, pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
+            logWarnings(pipeNames);
             return pipeNames;
         }
         log.debug("Giving dd-java-agent named pipes because {}", gate.reason);
@@ -147,7 +145,16 @@ public class ServerlessCompatAgent {
         systemProperties.setProperty(NamedPipe.DOGSTATSD.tracerProperty, pipeNames.dogstatsdPipeName);
         log.info("Configured named pipes - Trace: {}, DogStatsD: {}",
                 pipeNames.tracePipeName, pipeNames.dogstatsdPipeName);
+        logWarnings(pipeNames);
         return pipeNames;
+    }
+
+    // Logged after the gate decision, so the warnings follow the log line that says whether
+    // dd-java-agent got the pipes.
+    private static void logWarnings(NamedPipeNames pipeNames) {
+        for (String warning : pipeNames.warnings) {
+            log.warn(warning);
+        }
     }
 
     /**
